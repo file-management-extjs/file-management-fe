@@ -1,14 +1,15 @@
 Ext.define('FileManagement.components.utils.SocketManager', {
     singleton: true,
 
+    requires: [
+        'FileManagement.components.utils.NotificationUtil'
+    ],
+
     socket: null,
 
-    /**
-     * Initialize the WebSocket connection and event listeners.
-     */
     initSocket: function() {
-        const token = FileManagement.helpers.Functions.getToken();
-        const userId = localStorage.getItem('userId'); // Make sure you store userId during login
+            const token = FileManagement.helpers.Functions.getToken();
+            const userId = localStorage.getItem('userId'); // Make sure you store userId during login
 
         if (!this.socket) {
             this.socket = io.connect('http://localhost:5000', {
@@ -113,7 +114,14 @@ Ext.define('FileManagement.components.utils.SocketManager', {
             });
 
             this.initCancellationListeners();
+            this.setupListeners();
+            
         }
+    },
+
+    setupListeners: function() {
+        console.log('Setting up listeners...');
+        this.socket.on('fileScanUpdate', this.handleFileScanUpdate);
     },
 
     cancelOperation: function(jobId) {
@@ -135,5 +143,24 @@ Ext.define('FileManagement.components.utils.SocketManager', {
             console.error('Failed to cancel operation:', data.jobId, data.error);
             // Could show an error message to user here if needed
         });
+    },
+
+    handleFileScanUpdate: function(data) {
+        const { fileId, fileName, status, result } = data;
+           
+        if (status === 'scanning') {
+            // Use Ext.defer to ensure component is ready
+            Ext.defer(function() {
+                FileManagement.components.utils.NotificationUtil.showScanningNotification(fileName);
+            }, 100);
+        } else if (status === 'infected') {
+            Ext.defer(function() {
+                FileManagement.components.utils.NotificationUtil.showScanResultNotification(fileName, true);
+            }, 100);
+        } else if (status === 'clean') {
+            Ext.defer(function() {
+                FileManagement.components.utils.NotificationUtil.showScanResultNotification(fileName, false);
+            }, 100);
+        }   
     }
 });

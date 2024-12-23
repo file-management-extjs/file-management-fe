@@ -42,7 +42,7 @@ Ext.define('FileManagement.components.forms.auth.LoginForm', {
 
                                 // Reload the application to ensure updates
                                 Ext.Msg.alert('Success', 'Logged in successfully', function() {
-                                    window.location.reload();
+                                window.location.reload();
                                 });
                             },
                             failure: function(form, action) {

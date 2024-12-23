@@ -85,22 +85,6 @@ Ext.define('FileManagement.components.forms.FileUploadForm', {
                 }
             ]
         }
-        // {
-        //     xtype: 'filefield',
-        //     name: 'file',
-        //     fieldLabel: 'Files',
-        //     labelWidth: 50,
-        //     msgTarget: 'side',
-        //     allowBlank: false,
-        //     buttonText: 'Select Files...',
-        //     multiple: true,
-        //     listeners: {
-        //         afterrender: function (filefield) {
-        //             // Set the file input to accept multiple files
-        //             filefield.fileInputEl.dom.setAttribute('multiple', 'multiple');
-        //         }
-        //     }
-        // }
     ],
 
     buttons: [
@@ -130,10 +114,7 @@ Ext.define('FileManagement.components.forms.FileUploadForm', {
         if (!files.length) return;
 
         const CHUNK_SIZE = 1024 * 1024; // 1MB per chunk
-
-        // const progressIds = [];
         const failedFiles = [];
-
         const fileGrid = Ext.ComponentQuery.query('filegrid')[0];
 
         const fileQueueData = Array.from(files).map(file => ({
@@ -157,12 +138,13 @@ Ext.define('FileManagement.components.forms.FileUploadForm', {
                 if (error.name === 'AbortError') {
                     console.log(`Upload for ${file.name} canceled.`);
                     FileManagement.components.utils.ProgressBarManager.updateProgress(progressId, 0, 'Upload Canceled');
+                    FileManagement.components.utils.NotificationUtil.showWarning(`Upload canceled for ${file.name}`, 'Upload Canceled');
                 } else {
                     console.error('Error during upload:', error);
+                    failedFiles.push(file.name);
+                    FileManagement.components.utils.ProgressBarManager.updateQueuedStatus(progressId, file.name, 'Failed');
+                    FileManagement.components.utils.NotificationUtil.showError(`Failed to upload: ${file.name}`, 'Upload Error');
                 }
-                failedFiles.push(file.name);
-                FileManagement.components.utils.ProgressBarManager.updateQueuedStatus(progressId, file.name, 'Failed');
-                Ext.Msg.alert('Error', `Failed to upload file: ${file.name}`);
                 break; // Stop processing on failure
             }
         }
@@ -172,9 +154,12 @@ Ext.define('FileManagement.components.forms.FileUploadForm', {
 
         // Notify user
         if (failedFiles.length) {
-            Ext.Msg.alert('Error', `Some files failed to upload: ${failedFiles.join(', ')}`);
+            FileManagement.components.utils.NotificationUtil.showError(
+                `The following files failed to upload: ${failedFiles.join(', ')}`,
+                'Upload Failed'
+            );
         } else {
-            Ext.Msg.alert('Success', 'All files uploaded successfully!');
+            FileManagement.components.utils.NotificationUtil.showSuccess('All files uploaded successfully!', 'Upload Complete');
             fileGrid.getStore().reload();
         }
     },
@@ -196,7 +181,10 @@ Ext.define('FileManagement.components.forms.FileUploadForm', {
         if (response.ok) {
             const uploadedChunks = await response.json();
             if (uploadedChunks && uploadedChunks.length) {
-                console.log(`Resuming upload for ${file.name} from chunk ${uploadedChunks.length + 1}`);
+                FileManagement.components.utils.NotificationUtil.showInfo(
+                    `Resuming upload for ${file.name} from chunk ${uploadedChunks.length + 1}`,
+                    'Resuming Upload'
+                );
                 start = uploadedChunks.length * chunkSize; // Skip already uploaded chunks
             }
         }
@@ -206,7 +194,7 @@ Ext.define('FileManagement.components.forms.FileUploadForm', {
             const chunk = file.slice(start, end);
 
             const formData = new FormData();
-            formData.append('folderId', fileGrid.currentFolderId || ''); // Set folder in FormData
+            formData.append('folderId', fileGrid.currentFolderId || '');
             formData.append('chunk', chunk);
             formData.append('filename', file.name);
             formData.append('currentChunk', Math.floor(start / chunkSize) + 1);
@@ -216,9 +204,9 @@ Ext.define('FileManagement.components.forms.FileUploadForm', {
                 method: 'POST',
                 body: formData,
                 headers: {
-                    'Authorization': `Bearer ${token}` // Add token to headers
+                    'Authorization': `Bearer ${token}`
                 },
-                signal: abortSignal // Attach AbortController signal
+                signal: abortSignal
             });
 
             if (!uploadResponse.ok) {

@@ -137,7 +137,7 @@ Ext.define('FileManagement.components.viewers.TextViewer', {
                 htmlEditor.setValue(textContent);
             }
         } catch (error) {
-            Ext.Msg.alert('Error', 'Failed to load the text file: ' + error.message);
+            FileManagement.components.utils.NotificationUtil.showError('Failed to load the text file: ' + error.message, 'Load Error');
         }
     },
 
@@ -161,9 +161,9 @@ Ext.define('FileManagement.components.viewers.TextViewer', {
 
             if (!response.ok) throw new Error('Failed to save text file');
 
-            Ext.Msg.alert('Success', 'File saved successfully!');
+            FileManagement.components.utils.NotificationUtil.showSuccess('File saved successfully!', 'Save Complete');
         } catch (error) {
-            Ext.Msg.alert('Error', 'Failed to save the text file: ' + error.message);
+            FileManagement.components.utils.NotificationUtil.showError('Failed to save the text file: ' + error.message, 'Save Error');
         }
     },
 
@@ -177,9 +177,9 @@ Ext.define('FileManagement.components.viewers.TextViewer', {
             const json = JSON.parse(content);
             const beautifiedJson = JSON.stringify(json, null, 4); // Pretty print JSON
             htmlEditor.setValue(beautifiedJson);
-            Ext.Msg.alert('Success', 'JSON content has been beautified.');
+            FileManagement.components.utils.NotificationUtil.showSuccess('JSON content has been beautified.', 'Beautify Success');
         } catch (error) {
-            Ext.Msg.alert('Error', 'Invalid JSON: ' + error.message);
+            FileManagement.components.utils.NotificationUtil.showError('Invalid JSON: ' + error.message, 'Beautify Error');
         }
     }
 });

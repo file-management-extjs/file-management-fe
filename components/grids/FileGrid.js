@@ -426,10 +426,7 @@ Ext.define('FileManagement.components.grids.FileGrid', {
                     let uploadForm = Ext.ComponentQuery.query('fileuploadform')[0];
 
                     if (!uploadForm) {
-                        uploadForm = Ext.create('FileManagement.components.forms.FileUploadForm', {
-                            x: '50%',
-                            y: '50%'
-                        });
+                        uploadForm = Ext.create('FileManagement.components.forms.FileUploadForm');
                         mainPanelRegion.add(uploadForm);
                     } else {
                         uploadForm.setVisible(!uploadForm.isVisible());

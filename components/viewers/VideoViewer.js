@@ -53,7 +53,7 @@ Ext.define('FileManagement.components.viewers.VideoViewer', {
             });
 
             if (!response.ok) {
-                Ext.Msg.alert('Error', 'Failed to load video.');
+                FileManagement.components.utils.NotificationUtil.showError('Failed to load video.', 'Load Error');
                 return;
             }
 
@@ -96,7 +96,7 @@ Ext.define('FileManagement.components.viewers.VideoViewer', {
             });
 
         } catch (error) {
-            Ext.Msg.alert('Error', 'Unable to load video.');
+            FileManagement.components.utils.NotificationUtil.showError('Unable to load video.', 'Load Error');
             console.error('Video loading failed:', error);
         }
     }
