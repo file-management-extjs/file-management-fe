@@ -2,11 +2,15 @@ Ext.define('FileManagement.components.stores.FolderTreeStore', {
     extend: 'Ext.data.TreeStore',
     alias: 'store.foldertreestore',
 
+    requires: [
+        'FileManagement.components.utils.WorkspaceContext'
+    ],
+
     model: 'FileManagement.components.models.Folder', // Refer to the Folder model
 
     proxy: {
         type: 'ajax', // Use AJAX to fetch data from the backend
-        url: 'http://localhost:5000/api/files/folders/tree', // Backend API endpoint
+        url: FileManagementEnv.apiUrl('/api/files/folders/tree'), // Backend API endpoint
         reader: {
             type: 'json', // Parse JSON response
             rootProperty: 'folders' // Match the backend's "folders" property
@@ -35,12 +39,14 @@ Ext.define('FileManagement.components.stores.FolderTreeStore', {
         beforeload: function (store, operation) {
             const node = operation.node;
             const parentId = node.getId() || 'root'; // Use 'root' if parentId is undefined
-            store.getProxy().setExtraParams({ parentId }); // Dynamically set parentId
+            const workspaceId = FileManagement.components.utils.WorkspaceContext.getActiveWorkspaceId();
+            store.getProxy().setExtraParams({
+                parentId,
+                ...(workspaceId ? { workspaceId } : {})
+            }); // Dynamically set parentId
         },
         load: function (store, records, successful, operation) {
-            if (successful) {
-                console.log('Loaded records:', records);
-            } else {
+            if (!successful) {
                 console.error('Failed to load tree data');
             }
         }

@@ -1,6 +1,11 @@
 Ext.define('FileManagement.components.utils.ProgressBarManager', {
     singleton: true,
 
+    requires: [
+        'FileManagement.components.utils.ResponsivePanel',
+        'FileManagement.components.utils.PanelUtils'
+    ],
+
     progressBars: {},
     queueWindow: null,
     fileQueueStore: null,
@@ -10,8 +15,7 @@ Ext.define('FileManagement.components.utils.ProgressBarManager', {
 
     constructor: function() {
         this.callParent(arguments);
-        
-        // Create a shared store for all progress bars
+
         this.fileQueueStore = Ext.create('Ext.data.Store', {
             fields: ['fileName', 'status', 'progressId'],
             data: []
@@ -19,15 +23,14 @@ Ext.define('FileManagement.components.utils.ProgressBarManager', {
     },
 
     init: function() {
-        // Initialize file queue store
         this.fileQueueStore = Ext.create('Ext.data.Store', {
             fields: ['fileName', 'status', 'progressId'],
             data: []
         });
 
-        // Create operations popover
         this.operationsPopover = Ext.create('Ext.panel.Panel', {
             floating: true,
+            preventResponsiveFloatingFit: true,
             hidden: true,
             shadow: true,
             width: 400,
@@ -40,7 +43,7 @@ Ext.define('FileManagement.components.utils.ProgressBarManager', {
                 align: 'stretch'
             },
             style: {
-                zIndex: 999999 // Ensure popover stays on top
+                zIndex: 999999
             },
             bodyStyle: {
                 background: '#fff',
@@ -57,104 +60,200 @@ Ext.define('FileManagement.components.utils.ProgressBarManager', {
             }
         });
 
-        // Create progress button
         const userToolbar = Ext.getCmp('userToolbar');
         this.progressButton = userToolbar.down('#progressBar').add({
             xtype: 'button',
             itemId: 'operationsButton',
             hidden: true,
+            tooltip: 'Activity Center',
             html: '<div class="circular-progress"><span class="percentage">0%</span></div>',
             handler: function(btn) {
                 const popover = FileManagement.components.utils.ProgressBarManager.operationsPopover;
-                if (popover.isVisible()) {
+                if (popover && popover.isVisible()) {
                     popover.hide();
-                    btn.removeCls('active');
-                } else {
-                    btn.addCls('active');
-                    popover.showBy(btn, 'tl-bl?', [0, -5]);
                 }
+
+                btn.removeCls('active');
+                FileManagement.components.utils.PanelUtils.openActivityCenter();
             }
         });
 
         return this.progressButton;
     },
 
-    addProgressBar: function(id, text, files = [], cancelCallback = null) {
+    normalizeOptions: function(options) {
+        return options && typeof options === 'object' ? options : {};
+    },
+
+    addProgressBar: function(id, text, files = [], cancelCallback = null, options = null) {
         if (this.progressBars[id]) {
             console.warn(`Progress bar with ID "${id}" already exists.`);
-            return;
+            return this.progressBars[id].container;
         }
 
-        // Create popover if it doesn't exist
         if (!this.operationsPopover) {
             this.init();
         }
 
-        // Add files to queue store
-        if (files && files.length > 0) {
-            const newFiles = files.map(file => ({
-                fileName: file.name,
-                status: 'queued',
-                progressId: id
-            }));
-            this.fileQueueStore.add(newFiles);
+        const normalizedOptions = this.normalizeOptions(options);
+        const normalizedFiles = (files || []).map(file => ({
+            fileName: file.fileName || file.name || 'Unnamed file',
+            name: file.fileName || file.name || 'Unnamed file',
+            status: file.status || 'Queued',
+            size: file.size || null,
+            type: file.type || file.mimeType || '',
+            path: file.path || file.filePath || file.folderPath || file.folder || '',
+            progressId: id
+        }));
+
+        if (normalizedFiles.length > 0) {
+            this.fileQueueStore.add(normalizedFiles);
         }
 
-        const progressContainer = {
+        const progressContainer = this.operationsPopover.add({
             xtype: 'container',
             layout: 'hbox',
             margin: '0 0 4 0',
             items: [{
                 xtype: 'progressbar',
-                text: text + ' (0%)',
+                text: `${text} (0%)`,
                 flex: 1,
                 value: 0
             }, {
                 xtype: 'button',
                 iconCls: 'fa fa-ban',
                 margin: '0 0 0 5',
-                handler: function() {
-                    // Extract the actual job ID from the progress bar ID
-                    // Progress bar ID format: "compression-[timestamp]-[random]"
-                    if (id.startsWith('compression-')) {
-                        // Cancel via socket
-                        FileManagement.components.utils.SocketManager.cancelOperation(id);
-                        
-                        // Also cancel via API
-                        Ext.Ajax.request({
-                            url: 'http://localhost:5000/api/files/stop-compression',
-                            method: 'POST',
-                            jsonData: { jobId: id },
-                            success: function(response) {
-                                const result = Ext.decode(response.responseText);
-                                console.log('Compression cancelled via API:', result);
-                            },
-                            failure: function(response) {
-                                console.error('Failed to cancel compression via API:', response);
-                            }
-                        });
-                    } else {
-                        console.warn('Not a compression job:', id);
+                handler: () => {
+                    const progressBar = this.progressBars[id];
+                    if (!progressBar || typeof progressBar.cancelCallback !== 'function') {
+                        console.warn('No cancel handler configured for operation:', id);
+                        return;
                     }
+
+                    Promise.resolve(progressBar.cancelCallback(progressBar)).catch((error) => {
+                        console.error('Failed to cancel operation:', error);
+                    });
                 }
             }]
-        };
-
-        // Add to popover
-        const popoverItem = this.operationsPopover.add(progressContainer);
+        });
 
         this.progressBars[id] = {
-            container: popoverItem,
-            files: files,
-            progress: 0
-        };
+            container: progressContainer,
+            files: normalizedFiles,
+            progress: 0,
+            text,
+            cancelCallback,
+            jobId: normalizedOptions.jobId || null,
+            onComplete: normalizedOptions.onComplete || null,
+	            onError: normalizedOptions.onError || null,
+	            onCancel: normalizedOptions.onCancel || null,
+	            metadata: normalizedOptions.metadata || {},
+	            suppressToast: normalizedOptions.suppressToast === true,
+	            suppressButton: normalizedOptions.suppressButton === true,
+	            status: 'running',
+	            statusText: 'Running',
+	            startedAt: new Date(),
+	            updatedAt: new Date()
+	        };
 
-        // Show progress button if hidden
-        if (this.progressButton.isHidden()) {
-            this.progressButton.show();
+        this.syncProgressButtonVisibility();
+
+        if (this.operationsPopover.isVisible()) {
+            FileManagement.components.utils.ResponsivePanel.fitPopoverToViewport(this.operationsPopover, this.progressButton);
         }
 
-        return popoverItem;
+	        this.fireActivityChanged();
+	        if (!this.progressBars[id].suppressToast) {
+	            this.showActivityToast(this.getActivityForProgressBar(id, this.progressBars[id]));
+	        }
+
+        return progressContainer;
+    },
+
+    getProgressBar: function(id) {
+        return this.progressBars[id] || null;
+    },
+
+	    setJobId: function(id, jobId) {
+        const progressBar = this.getProgressBar(id);
+        if (progressBar) {
+            progressBar.jobId = jobId;
+            progressBar.updatedAt = new Date();
+            this.fireActivityChanged();
+        }
+	    },
+
+	    restoreOrUpdateProgressBar: function(id, config = {}) {
+	        if (!id) {
+	            return null;
+	        }
+
+	        const progressBar = this.getProgressBar(id);
+	        const files = config.files || config.affectedFiles || [];
+	        const cancelCallback = Ext.isFunction(config.cancelCallback) ? config.cancelCallback : null;
+
+	        if (!progressBar) {
+	            this.addProgressBar(
+	                id,
+	                config.text || config.title || 'Background operation',
+	                files,
+	                cancelCallback,
+	                {
+	                    jobId: config.jobId || null,
+	                    metadata: {
+	                        activityType: config.activityType || 'Background Job'
+	                    },
+	                    suppressToast: config.suppressToast !== false
+	                }
+	            );
+	        } else if (cancelCallback && !progressBar.cancelCallback) {
+	            progressBar.cancelCallback = cancelCallback;
+	        }
+
+	        if (config.jobId) {
+	            this.setJobId(id, config.jobId);
+	        }
+
+	        if (config.status || config.statusText || config.detail) {
+	            this.markActivityStatus(
+	                id,
+	                config.status || 'running',
+	                config.statusText || null,
+	                config.detail || null
+	            );
+	        }
+
+	        if (config.progress !== undefined) {
+	            this.updateProgress(id, Number(config.progress) || 0, config.text || config.title || null);
+	        }
+
+	        return this.getProgressBar(id);
+	    },
+
+    runCallback: function(id, callbackName, payload) {
+        const progressBar = this.getProgressBar(id);
+        if (!progressBar || typeof progressBar[callbackName] !== 'function') {
+            return;
+        }
+
+        try {
+            progressBar[callbackName](payload, progressBar);
+        } catch (error) {
+            console.error(`Error in ${callbackName} callback for "${id}":`, error);
+        }
+    },
+
+    markActivityStatus: function(id, status, statusText = null, detail = null) {
+        const progressBar = this.getProgressBar(id);
+        if (!progressBar) {
+            return;
+        }
+
+        progressBar.status = status || progressBar.status || 'running';
+        progressBar.statusText = statusText || progressBar.statusText || null;
+        progressBar.detail = detail || progressBar.detail || null;
+        progressBar.updatedAt = new Date();
+        this.fireActivityChanged();
     },
 
     removeProgressBar: function(id) {
@@ -165,65 +264,92 @@ Ext.define('FileManagement.components.utils.ProgressBarManager', {
             return;
         }
 
-        // Remove files from queue store
-        const filesToRemove = this.fileQueueStore.queryBy(record => record.get('progressId') === id);
+        const finalStatus = progressBar.status && progressBar.status !== 'running'
+            ? progressBar.status
+            : (progressBar.progress >= 100 ? 'completed' : 'cancelled');
+        const finalStatusText = progressBar.statusText && progressBar.statusText !== 'Running'
+            ? progressBar.statusText
+            : (finalStatus === 'completed' ? 'Completed' : 'Cancelled');
+
+        this.recordActivitySnapshot(this.getActivityForProgressBar(id, progressBar), {
+            status: finalStatus,
+            statusText: finalStatusText,
+            progress: progressBar.progress >= 100 ? 100 : progressBar.progress
+        });
+
+        const filesToRemove = this.fileQueueStore.queryBy(record =>
+            record.get('progressId') === id
+        );
         if (filesToRemove.length > 0) {
             this.fileQueueStore.remove(filesToRemove.items);
         }
 
-        // Remove from popover
-        this.operationsPopover.remove(progressBar.container, true);
+        if (this.operationsPopover && progressBar.container) {
+            this.operationsPopover.remove(progressBar.container, true);
+        }
         delete this.progressBars[id];
 
-        // Hide progress button if no more progress bars
-        if (Object.keys(this.progressBars).length === 0) {
-            this.progressButton.hide();
-            this.operationsPopover.hide();
-        }
+        this.syncProgressButtonVisibility();
+
+        this.fireActivityChanged();
     },
 
     cancelRelatedProgressBars: function(files) {
         const progressBarsToRemove = [];
-        
-        // Find all progress bars that contain any of the files
+
         Object.entries(this.progressBars).forEach(([id, progressBar]) => {
-            if (progressBar.files && progressBar.files.some(file => 
-                files.some(f => f.name === file.name))) {
+            if (progressBar.files && progressBar.files.some(file =>
+                files.some(currentFile => currentFile.name === file.fileName))) {
                 progressBarsToRemove.push(id);
             }
         });
 
-        // Remove all related progress bars
         progressBarsToRemove.forEach(id => this.removeProgressBar(id));
     },
 
     updateQueuedStatus: function(id, fileName, status) {
-        // Update status in the shared store
-        const record = this.fileQueueStore.findRecord('fileName', fileName);
-        if (record) {
-            record.set('status', status);
+        const record = this.fileQueueStore.findBy(currentRecord =>
+            currentRecord.get('progressId') === id && currentRecord.get('fileName') === fileName
+        );
+
+        if (record !== -1) {
+            const queueRecord = this.fileQueueStore.getAt(record);
+            queueRecord.set('status', status);
             this.fileQueueStore.commitChanges();
         }
+
+        const progressBar = this.progressBars[id];
+        if (progressBar && progressBar.files) {
+            const fileMeta = progressBar.files.find(file => file.fileName === fileName);
+            if (fileMeta) {
+                fileMeta.status = status;
+            }
+            progressBar.updatedAt = new Date();
+        }
+
+        this.fireActivityChanged();
     },
 
-    updateProgress: function(id, progress) {
+    updateProgress: function(id, progress, text = null) {
         const progressBar = this.progressBars[id];
         if (!progressBar) {
             console.warn(`Progress bar with ID "${id}" does not exist.`);
             return;
         }
 
-        // Update progress bar
         const progressComponent = progressBar.container.items.getAt(0);
         if (progressComponent) {
+            const nextText = (text || progressBar.text || '').replace(/\s*\(\d+%\)\s*$/, '').trim();
+            progressBar.text = nextText;
             progressComponent.updateProgress(
                 progress / 100,
-                progressComponent.text.replace(/\(\d+%\)/, `(${Math.round(progress)}%)`)
+                `${nextText} (${Math.round(progress)}%)`
             );
         }
 
-        // Update circular progress in button
-        const circularProgress = this.progressButton.el.down('.circular-progress');
+        const circularProgress = this.progressButton && this.progressButton.el
+            ? this.progressButton.el.down('.circular-progress')
+            : null;
         if (circularProgress) {
             circularProgress.setStyle({
                 background: `conic-gradient(#4169E1 ${progress * 3.6}deg, #E8EBF4 0deg)`
@@ -234,7 +360,179 @@ Ext.define('FileManagement.components.utils.ProgressBarManager', {
             }
         }
 
-        // Store progress
         progressBar.progress = progress;
+        progressBar.updatedAt = new Date();
+        this.fireActivityChanged();
+    },
+
+    getActiveCount: function() {
+        return Object.keys(this.progressBars).length;
+    },
+
+    hasVisibleProgressBars: function() {
+        return Object.keys(this.progressBars).some(id => {
+            const progressBar = this.progressBars[id];
+            return progressBar && progressBar.suppressButton !== true;
+        });
+    },
+
+    syncProgressButtonVisibility: function() {
+        if (!this.progressButton) {
+            return;
+        }
+
+        if (this.hasVisibleProgressBars()) {
+            this.progressButton.show();
+            return;
+        }
+
+        this.progressButton.hide();
+
+        if (this.operationsPopover && this.operationsPopover.isVisible && this.operationsPopover.isVisible()) {
+            this.operationsPopover.hide();
+        }
+    },
+
+    getActivities: function() {
+        return Object.entries(this.progressBars).map(([id, progressBar]) =>
+            this.getActivityForProgressBar(id, progressBar)
+        );
+    },
+
+    getActivityForProgressBar: function(id, progressBar) {
+        const activityType = this.inferActivityType(id, progressBar);
+        const progress = Number(progressBar.progress) || 0;
+        const status = progressBar.status || (progress >= 100 ? 'completed' : 'running');
+
+        return {
+            id: `progress-${id}`,
+            source: 'progress',
+            activityType,
+            iconCls: this.getActivityIcon(activityType),
+            title: progressBar.text || 'Background operation',
+            detail: progressBar.detail || this.formatFilesDetail(progressBar.files, progressBar.jobId),
+            affectedFiles: progressBar.files || [],
+            affectedFileCount: progressBar.files ? progressBar.files.length : 0,
+            status,
+            statusText: progressBar.statusText || (progress >= 100 ? 'Completed' : 'Running'),
+            progress,
+            updatedAt: progressBar.updatedAt || progressBar.startedAt,
+            createdAt: progressBar.startedAt || progressBar.updatedAt || new Date(),
+            canCancel: progress < 100 && status !== 'failed' && typeof progressBar.cancelCallback === 'function',
+            canOpenPanel: false,
+            relatedProgressId: id,
+            jobId: progressBar.jobId || null,
+            fileCount: progressBar.files ? progressBar.files.length : 0
+        };
+    },
+
+    inferActivityType: function(id, progressBar) {
+        const metadataType = progressBar.metadata && progressBar.metadata.activityType;
+        if (metadataType) {
+            return metadataType;
+        }
+
+        const value = `${id || ''} ${progressBar.text || ''}`.toLowerCase();
+
+        if (value.includes('upload')) {
+            return 'Upload';
+        }
+
+        if (value.includes('media')) {
+            return 'Media Conversion';
+        }
+
+        if (value.includes('document')) {
+            return 'Document Conversion';
+        }
+
+        if (value.includes('download')) {
+            return 'Download';
+        }
+
+        if (value.includes('compress') || value.includes('zip')) {
+            return 'Compression';
+        }
+
+	        if (value.includes('move')) {
+	            return 'Move';
+	        }
+
+	        if (value.includes('extract')) {
+	            return 'Extraction';
+	        }
+
+        return 'Background Job';
+    },
+
+    getActivityIcon: function(activityType) {
+        switch (activityType) {
+            case 'Upload':
+                return 'fa fa-upload blue-icon';
+            case 'Download':
+                return 'fa fa-download blue-icon';
+            case 'Compression':
+                return 'fa fa-file-zipper orange-icon';
+            case 'Media Conversion':
+                return 'fa fa-film blue-icon';
+            case 'Document Conversion':
+                return 'fa fa-file-lines blue-icon';
+	            case 'Move':
+	                return 'fa fa-arrows-up-down-left-right blue-icon';
+	            case 'Extraction':
+	                return 'fa fa-box-open orange-icon';
+	            default:
+	                return 'fa fa-spinner blue-icon';
+	        }
+    },
+
+    formatFilesDetail: function(files, jobId) {
+        const count = (files || []).length;
+        const parts = [];
+
+        if (count) {
+            parts.push(`${count} affected ${count === 1 ? 'file' : 'files'}`);
+        }
+
+        if (!parts.length && jobId) {
+            parts.push(`Job ${jobId}`);
+        }
+
+        return parts.join(', ');
+    },
+
+    recordActivitySnapshot: function(activity, overrides = {}) {
+        if (activity && ['Upload', 'Media Conversion', 'Document Conversion'].includes(activity.activityType)) {
+            return;
+        }
+
+        const activityCenter = FileManagement.components.status && FileManagement.components.status.ActivityCenterPanel;
+        if (activityCenter && activityCenter.recordActivitySnapshot) {
+            activityCenter.recordActivitySnapshot(activity, overrides);
+        }
+    },
+
+    showActivityToast: function(activity) {
+        const activityCenter = FileManagement.components.status && FileManagement.components.status.ActivityCenterPanel;
+        if (activityCenter && activityCenter.showBackgroundToast) {
+            activityCenter.showBackgroundToast(activity);
+        }
+    },
+
+    fireActivityChanged: function() {
+        const activityCenter = FileManagement.components.status && FileManagement.components.status.ActivityCenterPanel;
+        if (activityCenter && activityCenter.notifyChanged) {
+            activityCenter.notifyChanged();
+            return;
+        }
+
+        if (Ext.GlobalEvents) {
+            Ext.GlobalEvents.fireEvent('activitycenterchanged');
+        }
+
+        const navPanel = Ext.ComponentQuery.query('navigationpanel')[0];
+        if (navPanel && navPanel.refreshActivityCenterCount) {
+            navPanel.refreshActivityCenterCount();
+        }
     }
 });

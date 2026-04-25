@@ -15,10 +15,10 @@ Ext.define('FileManagement.components.viewers.VideoViewer', {
 
     draggable: {
         onMouseUp: function(e, panel) {
-            FileManagement.components.utils.PanelUtils.onMouseUp(panel ?? this.panel);
+            FileManagement.components.utils.PanelUtils.onMouseUp(panel ?? this.panel, e, this);
         },
         onDrag: function(e, panel) {
-            FileManagement.components.utils.PanelUtils.onDrag(panel ?? this.panel);
+            FileManagement.components.utils.PanelUtils.onDrag(panel ?? this.panel, e, this);
         }
     },
 
@@ -36,12 +36,44 @@ Ext.define('FileManagement.components.viewers.VideoViewer', {
         muted: false
     },
 
+    header: {
+        listeners: {
+            dblclick: function(header) {
+                const panel = header.up('panel');
+                FileManagement.components.utils.PanelUtils.toggleMaximize(panel);
+            }
+        }
+    },
+
+    tools: [
+        {
+            type: 'minimize',
+            tooltip: 'Minimize to toolbar',
+            handler: function() {
+                FileManagement.components.utils.PanelUtils.minimizeToTaskbar(this.up('panel'));
+            }
+        },
+        {
+            type: 'maximize',
+            itemId: 'maximizeTool',
+            tooltip: 'Maximize',
+            handler: function() {
+                const panel = this.up('panel');
+                if (panel && !panel.maximized) {
+                    FileManagement.components.utils.PanelUtils.maximizePanel(panel);
+                } else if (panel) {
+                    FileManagement.components.utils.PanelUtils.minimizePanel(panel);
+                }
+            }
+        }
+    ],
+
     initComponent: async function() {
         const me = this;
         
         me.callParent(arguments);
 
-        const videoUrl = `http://localhost:5000/api/video/stream/${me.fileId}`;
+        const videoUrl = FileManagementEnv.apiUrl(`/api/video/stream/${me.fileId}`);
         const token = FileManagement.helpers.Functions.getToken();
 
         try {
@@ -88,7 +120,11 @@ Ext.define('FileManagement.components.viewers.VideoViewer', {
                 const videoEl = videoComponent.getEl().dom;
 
                 // Disable context menu (right-click)
-                videoEl.addEventListener('contextmenu', (e) => e.preventDefault());
+                videoEl.addEventListener('contextmenu', (e) => {
+                    if (e.cancelable !== false) {
+                        e.preventDefault();
+                    }
+                });
 
                 // Disable download and external playback
                 videoEl.setAttribute('controlslist', 'nodownload noremoteplayback');

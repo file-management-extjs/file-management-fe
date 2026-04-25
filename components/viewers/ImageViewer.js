@@ -3,7 +3,9 @@ Ext.define('FileManagement.components.viewers.ImageViewer', {
     xtype: 'imageviewer',
 
     config: {
-        src: null
+        src: null,
+        isShared: false,
+        permission: null
     },
 
     title: 'Image Viewer',
@@ -23,10 +25,10 @@ Ext.define('FileManagement.components.viewers.ImageViewer', {
 
     draggable: {
         onMouseUp: function(e, panel) {
-            FileManagement.components.utils.PanelUtils.onMouseUp(panel ?? this.panel);
+            FileManagement.components.utils.PanelUtils.onMouseUp(panel ?? this.panel, e, this);
         },
         onDrag: function(e, panel) {
-            FileManagement.components.utils.PanelUtils.onDrag(panel ?? this.panel);
+            FileManagement.components.utils.PanelUtils.onDrag(panel ?? this.panel, e, this);
         }
     },
 
@@ -48,7 +50,15 @@ Ext.define('FileManagement.components.viewers.ImageViewer', {
 
     tools: [
         {
+            type: 'minimize',
+            tooltip: 'Minimize to toolbar',
+            handler: function () {
+                FileManagement.components.utils.PanelUtils.minimizeToTaskbar(this.up('panel'));
+            }
+        },
+        {
             type: 'maximize',
+            itemId: 'maximizeTool',
             handler: function () {
                 const panel = this.up('panel');
                 if (panel && !panel.maximized) {
@@ -63,6 +73,7 @@ Ext.define('FileManagement.components.viewers.ImageViewer', {
     tbar: [
         {
             text: 'Convert',
+            itemId: 'convertMenuButton',
             iconCls: 'fa fa-exchange-alt',
             menu: {
                 xtype: 'menu',
@@ -93,7 +104,12 @@ Ext.define('FileManagement.components.viewers.ImageViewer', {
                             const viewer = this.up('imageviewer');
                             const targetFormat = viewer.down('#targetFormat')?.getValue();
                             const quality = viewer.down('#qualitySlider')?.getValue();
-                            const grid = Ext.ComponentQuery.query('filegrid')[0];
+                            const grid = FileManagement.components.utils.PanelUtils.getPrimaryFileGrid();
+
+                            if (viewer.getIsShared && viewer.getIsShared()) {
+                                Ext.Msg.alert('Conversion Disabled', 'Shared images can be viewed, but only the owner can convert them.');
+                                return;
+                            }
 
                             if (!targetFormat) {
                                 Ext.Msg.alert('Error', 'Please select a target format.');
@@ -103,7 +119,7 @@ Ext.define('FileManagement.components.viewers.ImageViewer', {
                             viewer.mask(`Converting to "${targetFormat}"...`);
 
                             Ext.Ajax.request({
-                                url: 'http://localhost:5000/api/image/convert-image',
+                                url: FileManagementEnv.apiUrl('/api/image/convert-image'),
                                 method: 'POST',
                                 headers: {
                                     'Authorization': `Bearer ${token}`
@@ -113,14 +129,24 @@ Ext.define('FileManagement.components.viewers.ImageViewer', {
                                     targetFormat: targetFormat,
                                     quality: quality
                                 },
-                                success: function () {
-                                    Ext.Msg.alert('Success', 'Image converted successfully.');
-                                },
-                                failure: function () {
-                                    Ext.Msg.alert('Error', 'Failed to convert the image.');
+	                                success: function (response) {
+	                                    const payload = Ext.decode(response.responseText, true) || {};
+	                                    const queuedForScan = payload.scanStatus === 'pending';
+	                                    Ext.Msg.alert(
+	                                        'Success',
+	                                        queuedForScan
+	                                            ? 'Image converted successfully. It will appear in File Explorer after virus scanning completes.'
+	                                            : 'Image converted successfully.'
+	                                    );
+	                                },
+                                failure: function (response) {
+                                    const payload = Ext.decode(response.responseText, true) || {};
+                                    Ext.Msg.alert('Error', payload.error || 'Failed to convert the image.');
                                 },
                                 callback: function () {
-                                    grid.getStore().reload();
+                                    if (grid && grid.getStore) {
+                                        grid.getStore().reload();
+                                    }
                                     viewer.unmask();
                                 }
                             });
@@ -151,6 +177,10 @@ Ext.define('FileManagement.components.viewers.ImageViewer', {
         const token = FileManagement.helpers.Functions.getToken();
         const imagePath = this.getSrc();
         const viewerPanel = this;
+
+        if (this.getIsShared && this.getIsShared()) {
+            this.tbar = null;
+        }
 
         this.items = [{
             xtype: 'image',

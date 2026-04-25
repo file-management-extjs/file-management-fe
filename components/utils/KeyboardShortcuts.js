@@ -24,13 +24,17 @@ Ext.define('FileManagement.components.utils.KeyboardShortcuts', {
     handleKeyDown: function(e) {
         // Ctrl + Space for Quick Search
         if (e.ctrlKey && e.getKey() === e.SPACE) {
-            e.preventDefault(); // Prevent default browser behavior
+            if (!e.browserEvent || e.browserEvent.cancelable !== false) {
+                e.preventDefault(); // Prevent default browser behavior
+            }
             this.showQuickSearch();
         }
 
         // Alt + Q for switching panels
         if (e.altKey && e.getKey() === e.Q) {
-            e.preventDefault();
+            if (!e.browserEvent || e.browserEvent.cancelable !== false) {
+                e.preventDefault();
+            }
             this.switchPanels();
         }
     },
@@ -42,20 +46,10 @@ Ext.define('FileManagement.components.utils.KeyboardShortcuts', {
             quickSearch = Ext.create('FileManagement.components.search.QuickSearch', {
                 listeners: {
                     itemselected: function(record) {
-                        // Handle navigation to the selected item
-                        const grid = Ext.ComponentQuery.query('filegrid')[0];
+                        const grid = FileManagement.components.utils.PanelUtils.openFileExplorer();
                         if (!grid) return;
 
-                        if (record.get('isFolder')) {
-                            // Navigate to folder
-                            const parentId = record.get('parent_id');
-                            if (parentId) {
-                                grid.navigateToFolder(record.get('id'), record.get('name'));
-                            }
-                        } else {
-                            // Open file
-                            grid.handleItemDblClick(record);
-                        }
+                        grid.onFileDoubleClick(record);
                     }
                 }
             });

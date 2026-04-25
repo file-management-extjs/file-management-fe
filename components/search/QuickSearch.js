@@ -2,7 +2,9 @@ Ext.define('FileManagement.components.search.QuickSearch', {
     extend: 'Ext.panel.Panel',
     xtype: 'quicksearch',
     requires: [
-        'FileManagement.components.stores.FileGridStore'
+        'FileManagement.components.stores.FileGridStore',
+        'FileManagement.components.utils.WorkspaceContext',
+        'FileManagement.components.utils.ResponsivePanel'
     ],
 
     title: 'Quick Search',
@@ -10,6 +12,8 @@ Ext.define('FileManagement.components.search.QuickSearch', {
     height: 400,
     layout: 'fit',
     floating: true,
+    mobileFloatingFitToWorkspace: true,
+    mobileFloatingFill: true,
     draggable: true,
     resizable: false,
     frame: true,
@@ -24,6 +28,16 @@ Ext.define('FileManagement.components.search.QuickSearch', {
     modalConfig: {
         opacity: 0.3
     },
+
+    tools: [
+        {
+            type: 'minimize',
+            tooltip: 'Minimize',
+            handler: function() {
+                this.up('panel').hide();
+            }
+        }
+    ],
 
     // Center in viewport
     x: undefined,
@@ -94,6 +108,7 @@ Ext.define('FileManagement.components.search.QuickSearch', {
                 { name: 'isFolder', type: 'boolean' },
                 { name: 'isPasswordProtected', type: 'boolean' },
                 { name: 'parent_id', type: 'string' },
+                { name: 'ancestors', type: 'auto' },
                 { 
                     name: 'parentPath',
                     convert: function(v, record) {
@@ -114,7 +129,7 @@ Ext.define('FileManagement.components.search.QuickSearch', {
             groupField: 'parentPath',
             proxy: {
                 type: 'ajax',
-                url: 'http://localhost:5000/api/files/search',
+                url: FileManagementEnv.apiUrl('/api/files/search'),
                 headers: {
                     'Authorization': `Bearer ${FileManagement.helpers.Functions.getToken()}`
                 },
@@ -123,11 +138,6 @@ Ext.define('FileManagement.components.search.QuickSearch', {
                     rootProperty: 'results'
                 }
             },
-            listeners: {
-                load: function(store, records) {
-                    console.log('Search results:', records.map(r => r.data));
-                }
-            }
         });
 
         me.items = [{
@@ -151,7 +161,10 @@ Ext.define('FileManagement.components.search.QuickSearch', {
                             const query = field.getValue().trim();
                             if (query.length >= 2) {
                                 me.store.load({
-                                    params: { query: query }
+                                    params: {
+                                        query: query,
+                                        workspaceId: FileManagement.components.utils.WorkspaceContext.getActiveWorkspaceId() || ''
+                                    }
                                 });
                             } else {
                                 me.store.removeAll();
@@ -263,6 +276,7 @@ Ext.define('FileManagement.components.search.QuickSearch', {
         );
 
         this.show();
+        FileManagement.components.utils.ResponsivePanel.fitFloatingPanel(this);
         
         // Focus the search field
         const searchField = this.down('textfield');

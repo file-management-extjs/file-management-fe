@@ -74,7 +74,7 @@ Ext.define('FileManagement.components.dialogs.SetPasswordDialog', {
 
             // Call the set password API
             Ext.Ajax.request({
-                url: 'http://localhost:5000/api/files/password/set',
+                url: FileManagementEnv.apiUrl('/api/files/password/set'),
                 method: 'POST',
                 jsonData: {
                     itemId: win.getItemId(),

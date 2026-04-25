@@ -1,4 +1,18 @@
 // Upload Worker
+try {
+    importScripts('../env.js');
+} catch (error) {
+    self.FILE_MANAGEMENT_ENV = self.FILE_MANAGEMENT_ENV || {};
+}
+
+if (!self.FileManagementEnv) {
+    self.FileManagementEnv = {
+        apiUrl: function(path) {
+            return path && path.indexOf('/api') === 0 ? path : `/api${path || ''}`;
+        }
+    };
+}
+
 let activeUploads = 0;
 const maxConcurrentUploads = 3;
 const uploadQueue = [];
@@ -74,7 +88,7 @@ async function processUpload(file, folderId) {
                 formData.append('folderId', folderId);
             }
 
-            await uploadChunk(formData, 'http://localhost:5000/api/files/upload', headers);
+            await uploadChunk(formData, FileManagementEnv.apiUrl('/api/files/upload'), headers);
         }
 
         self.postMessage({

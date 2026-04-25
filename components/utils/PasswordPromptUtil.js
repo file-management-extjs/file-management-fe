@@ -61,7 +61,7 @@ Ext.define('FileManagement.components.utils.PasswordPromptUtil', {
                     
                     // Verify password
                     Ext.Ajax.request({
-                        url: 'http://localhost:5000/api/files/password/verify',
+                        url: FileManagementEnv.apiUrl('/api/files/password/verify'),
                         method: 'POST',
                         headers: {
                             'Authorization': `Bearer ${token}`

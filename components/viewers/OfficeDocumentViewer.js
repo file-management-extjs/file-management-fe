@@ -25,10 +25,10 @@ Ext.define('FileManagement.components.viewers.OfficeDocumentViewer', {
 
     draggable: {
         onMouseUp: function(e, panel) {
-            FileManagement.components.utils.PanelUtils.onMouseUp(panel ?? this.panel);
+            FileManagement.components.utils.PanelUtils.onMouseUp(panel ?? this.panel, e, this);
         },
         onDrag: function(e, panel) {
-            FileManagement.components.utils.PanelUtils.onDrag(panel ?? this.panel);
+            FileManagement.components.utils.PanelUtils.onDrag(panel ?? this.panel, e, this);
         }
     },
 
@@ -50,7 +50,15 @@ Ext.define('FileManagement.components.viewers.OfficeDocumentViewer', {
 
     tools: [
         {
+            type: 'minimize',
+            tooltip: 'Minimize to toolbar',
+            handler: function () {
+                FileManagement.components.utils.PanelUtils.minimizeToTaskbar(this.up('panel'));
+            }
+        },
+        {
             type: 'maximize',
+            itemId: 'maximizeTool',
             handler: function () {
                 const panel = this.up('panel');
                 if (panel && !panel.maximized) {

@@ -1,6 +1,8 @@
 Ext.define('FileManagement.components.utils.AccessTracker', {
     singleton: true,
 
+    verificationWindowMs: 30 * 60 * 1000,
+
     // Store verified items with their expiry timestamps
     verifiedItems: new Map(),
 
@@ -10,7 +12,7 @@ Ext.define('FileManagement.components.utils.AccessTracker', {
      */
     addVerifiedItem: function(itemId) {
         // Set expiry to 30 minutes from now
-        const expiryTime = Date.now() + (1 * 60 * 1000);
+        const expiryTime = Date.now() + this.verificationWindowMs;
         this.verifiedItems.set(itemId, expiryTime);
     },
 

@@ -39,7 +39,7 @@ Ext.define('FileManagement.components.dialogs.ExtractionDialog', {
                                         const parentId = record.get('id') === 'root' ? null : record.get('id');
                                         
                                         Ext.Ajax.request({
-                                            url: 'http://localhost:5000/api/files/create-folder',
+                                            url: FileManagementEnv.apiUrl('/api/files/create-folder'),
                                             method: 'POST',
                                             headers: {
                                                 'Authorization': `Bearer ${token}`,

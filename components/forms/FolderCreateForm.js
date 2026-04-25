@@ -57,12 +57,12 @@ Ext.define('FileManagement.components.forms.FolderCreateForm', {
 
                 if (form.isValid() && folderName) {
                     Ext.Ajax.request({
-                        url: 'http://localhost:5000/api/files/create-folder',
+                        url: FileManagementEnv.apiUrl('/api/files/create-folder'),
                         method: 'POST',
                         jsonData: { name: folderName },
                         success: function(response) {
                             Ext.Msg.alert('Success', 'Folder created successfully.');
-                            const fileGrid = Ext.ComponentQuery.query('filegrid')[0];
+                            const fileGrid = FileManagement.components.utils.PanelUtils.getPrimaryFileGrid();
                             if (fileGrid) fileGrid.getStore().load(); // Reload grid to show the new folder
                             form.reset();
                         },

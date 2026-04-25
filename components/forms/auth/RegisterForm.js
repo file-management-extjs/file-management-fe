@@ -26,7 +26,7 @@ Ext.define('FileManagement.components.forms.auth.RegisterForm', {
                     const form = btn.up('form').getForm();
                     if (form.isValid()) {
                         form.submit({
-                            url: 'http://localhost:5000/api/auth/register',
+                            url: FileManagementEnv.apiUrl('/api/auth/register'),
                             success: function() {
                                 Ext.Msg.alert('Success', 'Registration successful');
                                 btn.up('window').close();

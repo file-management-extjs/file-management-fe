@@ -6,7 +6,7 @@ Ext.define('FileManagement.components.stores.FileGridStore', {
     groupField: 'parentPath',
     proxy: {
         type: 'ajax',
-        url: 'http://localhost:5000/api/files',
+        url: FileManagementEnv.apiUrl('/api/files'),
         reader: {
             type: 'json',
             rootProperty: 'files',
@@ -40,6 +40,11 @@ Ext.define('FileManagement.components.stores.FileGridStore', {
         { name: 'mimetype', type: 'string' },
         { name: 'name', type: 'string' },
         { name: 'path', type: 'string' },
+        { name: 'scanStatus', type: 'string' },
+        { name: 'scanProgress', type: 'number' },
+        { name: 'scanResult', type: 'string' },
+        { name: 'scanDate', type: 'date' },
+        { name: 'contentIntelligence', type: 'auto' },
         {
             name: 'icon',
             type: 'string',
@@ -84,6 +89,10 @@ Ext.define('FileManagement.components.stores.FileGridStore', {
                 // Add lock icon if item is locked
                 if (record.get('isLocked')) {
                     iconClass += ' fa-lock'; // Lock icon
+                }
+
+                if (record.get('isShared') || record.get('isSharedByMe')) {
+                    iconClass += ' blue-icon';
                 }
 
                 return iconClass;
@@ -149,8 +158,49 @@ Ext.define('FileManagement.components.stores.FileGridStore', {
             type: 'date' // Automatically parses ISO date strings from MongoDB
         },
         { name: 'isFolder', type: 'boolean' },
+        { name: 'parent_id', type: 'string', allowNull: true },
+        { name: 'ancestors', type: 'auto' },
         { name: 'isLocked', type: 'boolean' },
+        { name: 'isShared', type: 'boolean' },
+        { name: 'isSharedByMe', type: 'boolean' },
+        { name: 'sharedBy', type: 'string' },
+        { name: 'ownerId', type: 'string' },
+        { name: 'createdByUserId', type: 'string' },
+        { name: 'workspaceId', type: 'string' },
+        { name: 'workspaceType', type: 'string' },
+        { name: 'organizationId', type: 'string' },
+        { name: 'permission', type: 'string' },
+        { name: 'shareTargetType', type: 'string' },
+        { name: 'shareKind', type: 'string' },
+        { name: 'shareId', type: 'string' },
+        { name: 'recipientId', type: 'string' },
+        { name: 'recipientUsername', type: 'string' },
+        { name: 'recipientEmail', type: 'string' },
+        { name: 'sharedWith', type: 'string' },
+        { name: 'sharedWithList', type: 'string' },
+        { name: 'shareCount', type: 'number' },
+        { name: 'shareStatus', type: 'string' },
+        { name: 'itemDeleted', type: 'boolean' },
+        { name: 'outgoingShareIds' },
+        { name: 'hasPublicLink', type: 'boolean' },
+        { name: 'publicLinkId', type: 'string' },
+        { name: 'publicLinkIds' },
+        { name: 'publicLinkCount', type: 'number' },
+        { name: 'tokenPreview', type: 'string' },
+        { name: 'accessCount', type: 'number' },
+        { name: 'lastAccessedAt', type: 'date' },
+        { name: 'maxDownloads', type: 'number' },
+        { name: 'downloadCount', type: 'number' },
+        { name: 'lastDownloadedAt', type: 'date' },
+        { name: 'sharedAt', type: 'date' },
+        { name: 'shareUpdatedAt', type: 'date' },
+        { name: 'expiresAt', type: 'date' },
         { name: 'hasChildren', type: 'boolean' },
+        { name: 'isUploadPlaceholder', type: 'boolean' },
+        { name: 'rowOperationType', type: 'string' },
+        { name: 'rowOperationProgress', type: 'number' },
+        { name: 'rowOperationStatus', type: 'string' },
+        { name: 'rowOperationKey', type: 'string' },
         { 
             name: 'parentPath',
             convert: function(v, record) {
@@ -174,8 +224,10 @@ Ext.define('FileManagement.components.stores.FileGridStore', {
 
         // Add listener to handle grouping based on search
         this.on('beforeload', function(store, operation) {
-            const isSearching = store.getProxy().extraParams.search;
-            store.setGroupField(isSearching ? 'parentPath' : null);
+            const params = store.getProxy().extraParams || {};
+            const isSearching = params.search;
+            const isSharedByMe = params.sharedByMe === 'true';
+            store.setGroupField(isSearching && !isSharedByMe ? 'parentPath' : null);
         });
     },
 
@@ -196,10 +248,14 @@ Ext.define('FileManagement.components.stores.FileGridStore', {
     },
 
     deleteFiles: function(fileIds) {
+        const params = this.getProxy().getExtraParams ? this.getProxy().getExtraParams() : (this.getProxy().extraParams || {});
         Ext.Ajax.request({
-            url: 'http://localhost:5000/api/files', // API for batch deletion
+            url: FileManagementEnv.apiUrl('/api/files'), // API for batch deletion
             method: 'DELETE',
-            jsonData: { ids: fileIds },
+            jsonData: {
+                ids: fileIds,
+                workspaceId: params.workspaceId || ''
+            },
             success: (response) => {
                 Ext.Msg.alert('Success', 'Files/Folders deleted successfully.');
                 this.reload(); // Reload the store data after deletion
@@ -211,10 +267,16 @@ Ext.define('FileManagement.components.stores.FileGridStore', {
     },
 
     renameFile: function(fileId, newName, isFolder) {
+        const params = this.getProxy().getExtraParams ? this.getProxy().getExtraParams() : (this.getProxy().extraParams || {});
         Ext.Ajax.request({
-            url: 'http://localhost:5000/api/files/rename',
+            url: FileManagementEnv.apiUrl('/api/files/rename'),
             method: 'POST',
-            jsonData: { itemId: fileId, newName, isFolder },
+            jsonData: {
+                itemId: fileId,
+                newName,
+                isFolder,
+                workspaceId: params.workspaceId || ''
+            },
             success: () => {
                 Ext.Msg.alert('Success', 'File/Folder renamed successfully.');
                 this.reload(); // Reload the store after renaming
@@ -232,8 +294,6 @@ Ext.define('FileManagement.components.stores.FileGridStore', {
             currentFolderId: currentFolderId,
             currentFolder: currentFolder,
             onSuccess: function() {
-                console.log('khaldoon');
-                
                 grid.getStore().reload();
             }
         }).show();

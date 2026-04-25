@@ -13,7 +13,7 @@ Ext.define('FileManagement.components.grids.FileGridActions', {
 
                     Ext.Msg.confirm('Confirm Delete', `Are you sure you want to delete ${filename}?`, function(btn) {
                         if (btn === 'yes') {
-                            fetch('http://localhost:5000/api/files/delete', {
+                            fetch(FileManagementEnv.apiUrl('/api/files/delete'), {
                                 method: 'DELETE',
                                 headers: {
                                     'Content-Type': 'application/json',

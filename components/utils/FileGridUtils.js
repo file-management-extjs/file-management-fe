@@ -1,17 +1,34 @@
 Ext.define('FileManagement.components.utils.FileGridUtils', {
     singleton: true,
+	    requires: [
+	        'FileManagement.helpers.Functions',
+	        'FileManagement.components.utils.PanelUtils',
+	        'FileManagement.components.utils.ProgressBarManager'
+	    ],
 
-    downloadFileInChunks: async function(filePath, fileName, token, chunkSize) {
+    downloadFileInChunks: async function(fileRef, fileName, token, chunkSize, fileGrid = null) {
+        const downloadRef = Ext.isObject(fileRef) ? fileRef : { filePath: fileRef };
         const progressId = `download-${fileName}`; // Use fileName for more readable ID
         const abortController = new AbortController();
+        const grid = fileGrid && !fileGrid.destroyed && !fileGrid.destroying
+            ? fileGrid
+            : FileManagement.components.utils.PanelUtils.getPrimaryFileGrid();
+
+        if (grid && grid.startDownloadIndicator) {
+            grid.startDownloadIndicator(downloadRef, fileName, progressId);
+        }
 
         // Add progress bar with cancel callback
         FileManagement.components.utils.ProgressBarManager.addProgressBar(
             progressId, 
             `Downloading ${fileName}`, 
-            [{ fileName: fileName, status: 'Queued' }],
+            [{
+                fileName: fileName,
+                status: 'Queued',
+                path: downloadRef.filePath || '',
+                size: null
+            }],
             function() {
-                console.log('Download cancelled');
                 abortController.abort();
             },
             false
@@ -19,13 +36,13 @@ Ext.define('FileManagement.components.utils.FileGridUtils', {
 
         try {
             // First get the file size
-            const metadataResponse = await fetch('http://localhost:5000/api/files/file-size', {
+            const metadataResponse = await fetch(FileManagementEnv.apiUrl('/api/files/file-size'), {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ filePath }),
+                body: JSON.stringify(downloadRef),
                 signal: abortController.signal
             });
 
@@ -34,7 +51,10 @@ Ext.define('FileManagement.components.utils.FileGridUtils', {
             }
 
             const { fileSize } = await metadataResponse.json();
-            console.log('Total file size:', fileSize);
+            const progressBar = FileManagement.components.utils.ProgressBarManager.getProgressBar(progressId);
+            if (progressBar && progressBar.files && progressBar.files[0]) {
+                progressBar.files[0].size = fileSize || null;
+            }
 
             // Set initial status
             FileManagement.components.utils.ProgressBarManager.updateQueuedStatus(
@@ -52,14 +72,14 @@ Ext.define('FileManagement.components.utils.FileGridUtils', {
             while (totalSize < fileSize) {
                 const end = Math.min(totalSize + optimalChunkSize - 1, fileSize - 1);
                 
-                const response = await fetch('http://localhost:5000/api/files/download', {
+                const response = await fetch(FileManagementEnv.apiUrl('/api/files/download'), {
                     method: 'POST',
                     headers: {
                         'Authorization': `Bearer ${token}`,
                         'Content-Type': 'application/json',
                         'Range': `bytes=${totalSize}-${end}`
                     },
-                    body: JSON.stringify({ filePath }),
+                    body: JSON.stringify(downloadRef),
                     signal: abortController.signal
                 });
 
@@ -77,12 +97,14 @@ Ext.define('FileManagement.components.utils.FileGridUtils', {
                 
                 // Update progress for each chunk
                 const progress = Math.round((totalSize / fileSize) * 100);
-                console.log(`Download progress: ${progress}% (${totalSize}/${fileSize} bytes)`);
                 FileManagement.components.utils.ProgressBarManager.updateProgress(
                     progressId,
                     progress,
                     `Downloading ${fileName}... ${progress}%`
                 );
+                if (grid && grid.updateDownloadIndicator) {
+                    grid.updateDownloadIndicator(progressId, progress);
+                }
             }
 
             // Combine chunks and create final blob
@@ -104,26 +126,51 @@ Ext.define('FileManagement.components.utils.FileGridUtils', {
                 100,
                 `Downloaded ${fileName}`
             );
+            if (grid && grid.updateDownloadIndicator) {
+                grid.updateDownloadIndicator(progressId, 100);
+            }
 
             // Keep progress bar visible briefly so user can see completion
             setTimeout(() => {
                 FileManagement.components.utils.ProgressBarManager.removeProgressBar(progressId);
+                if (grid && grid.finishDownloadIndicator) {
+                    grid.finishDownloadIndicator(progressId, 'Downloaded');
+                }
             }, 2000);
 
         } catch (error) {
             console.error('Download error:', error);
             if (error.name === 'AbortError') {
+                if (grid && grid.finishDownloadIndicator) {
+                    grid.finishDownloadIndicator(progressId, 'Cancelled', 900);
+                }
+                FileManagement.components.utils.ProgressBarManager.markActivityStatus(
+                    progressId,
+                    'cancelled',
+                    'Cancelled'
+                );
                 FileManagement.components.utils.ProgressBarManager.updateQueuedStatus(
                     progressId,
                     fileName,
                     'Cancelled'
                 );
+                FileManagement.components.utils.ProgressBarManager.removeProgressBar(progressId);
             } else {
+                if (grid && grid.finishDownloadIndicator) {
+                    grid.finishDownloadIndicator(progressId, 'Failed', 1600);
+                }
+                FileManagement.components.utils.ProgressBarManager.markActivityStatus(
+                    progressId,
+                    'failed',
+                    'Failed',
+                    error.message || 'Download failed'
+                );
                 FileManagement.components.utils.ProgressBarManager.updateQueuedStatus(
                     progressId,
                     fileName,
                     'Failed'
                 );
+                FileManagement.components.utils.ProgressBarManager.removeProgressBar(progressId);
                 Ext.Msg.alert('Error', `Download failed: ${error.message}`);
             }
             throw error;
@@ -149,13 +196,12 @@ Ext.define('FileManagement.components.utils.FileGridUtils', {
         }
     },
 
-    moveItem: function(selectedItems, targetRecord) {
+    moveItem: function(selectedItems, targetRecord, sourceGrid) {
         if (!targetRecord || !targetRecord.get('id')) {
-            reject('Invalid target folder');
-            return;
+            return Promise.reject('Invalid target folder');
         }
 
-        const token = localStorage.getItem('token');
+        const token = FileManagement.helpers.Functions.getToken();
         const targetFolderId = targetRecord.get('id');
         const targetFolderName = targetRecord.get('name') || targetRecord.get('text');
         
@@ -168,35 +214,63 @@ Ext.define('FileManagement.components.utils.FileGridUtils', {
             // First check if target is password protected
             this.handleItemAccess(targetRecord, () => {
                 Ext.Msg.confirm('Move', confirmMessage, function(choice) {
-                    if (choice === 'yes') {
-                        // Prepare the data for the move operation
-                        const moveData = {
-                            itemIds: selectedItems.map(item => item.get('id')),
-                            targetId: targetFolderId,
-                            isTargetZip: isTargetZip,
-                            progressId: `moving-${Date.now()}`
-                        };
+	                    if (choice === 'yes') {
+	                        const progressId = `moving-${Date.now()}`;
+	                        // Prepare the data for the move operation
+	                        const moveData = {
+	                            itemIds: selectedItems.map(item => item.get('id')),
+	                            targetId: targetFolderId,
+	                            isTargetZip: isTargetZip,
+	                            progressId,
+                                workspaceId: sourceGrid && sourceGrid.getWorkspaceId ? sourceGrid.getWorkspaceId() : ''
+	                        };
 
-                        // Make the API call to move the items
-                        Ext.Ajax.request({
-                            url: 'http://localhost:5000/api/files/move',
+	                        FileManagement.components.utils.ProgressBarManager.addProgressBar(
+	                            progressId,
+	                            `Moving ${selectedItems.length} item${selectedItems.length === 1 ? '' : 's'}`,
+	                            selectedItems.map(item => ({
+	                                name: item.get('name'),
+	                                fileName: item.get('name'),
+	                                status: 'Queued',
+	                                size: item.get('size') || null,
+	                                type: item.get('type') || '',
+	                                path: item.get('path') || ''
+	                            })),
+	                            null,
+	                            {
+	                                metadata: {
+	                                    activityType: 'Move'
+	                                }
+	                            }
+	                        );
+
+	                        // Make the API call to move the items
+	                        Ext.Ajax.request({
+                            url: FileManagementEnv.apiUrl('/api/files/move'),
                             method: 'POST',
                             headers: {
                                 'Authorization': `Bearer ${token}`,
                                 'Content-Type': 'application/json'
                             },
                             jsonData: moveData,
-                            success: function(response) {
-                                // Refresh the grid after successful move
-                                const grid = Ext.ComponentQuery.query('filegrid')[0];
+	                            success: function(response) {
+	                                FileManagement.components.utils.ProgressBarManager.markActivityStatus(progressId, 'completed', 'Moved');
+	                                FileManagement.components.utils.ProgressBarManager.updateProgress(progressId, 100, 'Move complete');
+	                                Ext.defer(function() {
+	                                    FileManagement.components.utils.ProgressBarManager.removeProgressBar(progressId);
+	                                }, 1200);
+	                                // Refresh the grid after successful move
+	                                const grid = sourceGrid || FileManagement.components.utils.PanelUtils.getPrimaryFileGrid();
                                 if (grid && grid.getStore()) {
                                     grid.getStore().reload();
                                 }
                                 resolve(response);
                             },
-                            failure: function(response) {
-                                reject('Move operation failed: ' + response.statusText);
-                            }
+	                            failure: function(response) {
+	                                FileManagement.components.utils.ProgressBarManager.markActivityStatus(progressId, 'failed', 'Failed');
+	                                FileManagement.components.utils.ProgressBarManager.removeProgressBar(progressId);
+	                                reject('Move operation failed: ' + response.statusText);
+	                            }
                         });
                     }
                 });

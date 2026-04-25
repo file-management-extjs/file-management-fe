@@ -66,7 +66,7 @@ Ext.define('FileManagement.components.dialogs.PasswordPromptDialog', {
 
                 // Call the verify password API
                 Ext.Ajax.request({
-                    url: 'http://localhost:5000/api/files/password/verify',
+                    url: FileManagementEnv.apiUrl('/api/files/password/verify'),
                     method: 'POST',
                     jsonData: {
                         itemId: win.record.get('id'),

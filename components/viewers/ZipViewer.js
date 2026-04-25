@@ -11,7 +11,9 @@ Ext.define('FileManagement.components.viewers.ZipViewer', {
     config: {
         src: null,
         fileName: null,
-        filePath: null
+        filePath: null,
+        isShared: false,
+        permission: null
     },
 
     title: 'Zip File Contents',
@@ -31,10 +33,10 @@ Ext.define('FileManagement.components.viewers.ZipViewer', {
 
     draggable: {
         onMouseUp: function(e, panel) {
-            FileManagement.components.utils.PanelUtils.onMouseUp(panel ?? this.panel);
+            FileManagement.components.utils.PanelUtils.onMouseUp(panel ?? this.panel, e, this);
         },
         onDrag: function(e, panel) {
-            FileManagement.components.utils.PanelUtils.onDrag(panel ?? this.panel);
+            FileManagement.components.utils.PanelUtils.onDrag(panel ?? this.panel, e, this);
         }
     },
 
@@ -56,7 +58,15 @@ Ext.define('FileManagement.components.viewers.ZipViewer', {
 
     tools: [
         {
+            type: 'minimize',
+            tooltip: 'Minimize to toolbar',
+            handler: function () {
+                FileManagement.components.utils.PanelUtils.minimizeToTaskbar(this.up('panel'));
+            }
+        },
+        {
             type: 'maximize',
+            itemId: 'maximizeTool',
             handler: function () {
                 const panel = this.up('panel');
                 if (panel && !panel.maximized) {
@@ -85,6 +95,7 @@ Ext.define('FileManagement.components.viewers.ZipViewer', {
         const token = FileManagement.helpers.Functions.getToken();
         const zipFilePath = this.getSrc();
         const zipPanel = this;
+        const isShared = this.getIsShared && this.getIsShared();
 
         // Initialize grid panel and other items first
         this.items = [{
@@ -131,9 +142,16 @@ Ext.define('FileManagement.components.viewers.ZipViewer', {
                 {
                     text: 'Extract',
                     iconCls: 'fa-duotone fa-solid fa-file-zipper',
+                    hidden: isShared,
+                    disabled: isShared,
                     handler: function() {
                         const gridPanel = this.up('gridpanel');
                         const zipViewer = this.up('zipviewer');
+
+                        if (zipViewer.getIsShared && zipViewer.getIsShared()) {
+                            Ext.Msg.alert('Extraction Disabled', 'Shared archives can be viewed, but only the owner can extract them.');
+                            return;
+                        }
                         
                         Ext.create('FileManagement.components.dialogs.ExtractionDialog', {
                             file: {

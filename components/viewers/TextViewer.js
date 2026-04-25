@@ -4,7 +4,10 @@ Ext.define('FileManagement.components.viewers.TextViewer', {
     xtype: 'textviewer',
 
     config: {
-        src: null
+        src: null,
+        fileId: null,
+        isShared: false,
+        permission: null
     },
 
     title: 'Text Viewer',
@@ -24,10 +27,10 @@ Ext.define('FileManagement.components.viewers.TextViewer', {
 
     draggable: {
         onMouseUp: function(e, panel) {
-            FileManagement.components.utils.PanelUtils.onMouseUp(panel ?? this.panel);
+            FileManagement.components.utils.PanelUtils.onMouseUp(panel ?? this.panel, e, this);
         },
         onDrag: function(e, panel) {
-            FileManagement.components.utils.PanelUtils.onDrag(panel ?? this.panel);
+            FileManagement.components.utils.PanelUtils.onDrag(panel ?? this.panel, e, this);
         }
     },
 
@@ -49,7 +52,15 @@ Ext.define('FileManagement.components.viewers.TextViewer', {
 
     tools: [
         {
+            type: 'minimize',
+            tooltip: 'Minimize to toolbar',
+            handler: function () {
+                FileManagement.components.utils.PanelUtils.minimizeToTaskbar(this.up('panel'));
+            }
+        },
+        {
             type: 'maximize',
+            itemId: 'maximizeTool',
             handler: function () {
                 const panel = this.up('panel');
                 if (panel && !panel.maximized) {
@@ -83,6 +94,8 @@ Ext.define('FileManagement.components.viewers.TextViewer', {
     },
 
     initComponent: function () {
+        const isShared = this.getIsShared && this.getIsShared();
+
         // Define items with the htmleditor for text editing
         this.items = [{
             xtype: 'htmleditor',
@@ -92,15 +105,29 @@ Ext.define('FileManagement.components.viewers.TextViewer', {
             enableAlignments: true,
             value: 'Loading...', // Temporary placeholder text
             style: 'width: 100%; height: 100%;',
-            margin: '10'
+            margin: '10',
+            listeners: {
+                afterrender: function(editor) {
+                    if (isShared && editor.setReadOnly) {
+                        editor.setReadOnly(true);
+                    }
+                }
+            }
         }];
 
         // Add Save and Cancel buttons to the bottom toolbar
         this.bbar = [
             '->', // Align buttons to the right
             {
+                xtype: 'tbtext',
+                text: 'Shared file: read only',
+                hidden: !isShared
+            },
+            {
                 text: 'Save',
                 iconCls: 'fa fa-save',
+                hidden: isShared,
+                disabled: isShared,
                 handler: this.saveTextContent.bind(this)
             },
             {
@@ -143,20 +170,32 @@ Ext.define('FileManagement.components.viewers.TextViewer', {
 
     saveTextContent: async function () {
         const token = FileManagement.helpers.Functions.getToken();
-        const fileUrl = this.getSrc();
+        const fileId = this.getFileId();
+
+        if (this.getIsShared && this.getIsShared()) {
+            FileManagement.components.utils.NotificationUtil.showError('Shared text files can only be edited by the owner.', 'Read Only');
+            return;
+        }
+
+        if (!fileId) {
+            FileManagement.components.utils.NotificationUtil.showError('Missing file identifier.', 'Save Error');
+            return;
+        }
 
         // Get the updated content from the editor
         const htmlEditor = this.down('htmleditor');
         const updatedContent = htmlEditor ? htmlEditor.getValue() : '';
 
         try {
-            const response = await fetch(fileUrl, {
+            const response = await fetch(FileManagementEnv.apiUrl(`/api/files/content/${fileId}`), {
                 method: 'PUT', // Use PUT or POST depending on your API
                 headers: {
                     'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'text/plain'
+                    'Content-Type': 'application/json'
                 },
-                body: updatedContent
+                body: JSON.stringify({
+                    content: updatedContent
+                })
             });
 
             if (!response.ok) throw new Error('Failed to save text file');
@@ -170,8 +209,6 @@ Ext.define('FileManagement.components.viewers.TextViewer', {
     beautifyJsonContent: function () {
         const htmlEditor = this.down('htmleditor');
         const content = htmlEditor ? htmlEditor.getValue() : '';
-
-        console.log(htmlEditor);
 
         try {
             const json = JSON.parse(content);

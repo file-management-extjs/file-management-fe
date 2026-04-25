@@ -1,5 +1,8 @@
 Ext.define('FileManagement.components.utils.DecompressionUtil', {
     singleton: true,
+    requires: [
+        'FileManagement.components.utils.ProgressBarManager'
+    ],
 
     decompressFile: function(config) {
         const token = FileManagement.helpers.Functions.getToken();
@@ -10,6 +13,25 @@ Ext.define('FileManagement.components.utils.DecompressionUtil', {
             onFailure,
             grid
         } = config;
+        const fileName = (filePath || '').split('/').pop() || 'archive';
+        const progressId = config.progressId || `extraction-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+
+        FileManagement.components.utils.ProgressBarManager.addProgressBar(
+            progressId,
+            `Extracting ${fileName}`,
+            [{
+                name: fileName,
+                fileName,
+                status: 'Queued',
+                path: filePath || ''
+            }],
+            null,
+            {
+                metadata: {
+                    activityType: 'Extraction'
+                }
+            }
+        );
 
         // Show initial loading mask
         if (grid) {
@@ -17,7 +39,7 @@ Ext.define('FileManagement.components.utils.DecompressionUtil', {
         }
 
         Ext.Ajax.request({
-            url: 'http://localhost:5000/api/files/decompress',
+            url: FileManagementEnv.apiUrl('/api/files/decompress'),
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${token}`,
@@ -25,12 +47,19 @@ Ext.define('FileManagement.components.utils.DecompressionUtil', {
             },
             jsonData: {
                 filePath: filePath,
-                parentId: parentId
+                parentId: parentId,
+                progressId: progressId,
+                workspaceId: grid && grid.getWorkspaceId ? grid.getWorkspaceId() : ''
             },
             success: function(response) {
                 if (grid) {
                     grid.setLoading(false);
                 }
+                FileManagement.components.utils.ProgressBarManager.markActivityStatus(progressId, 'completed', 'Extracted');
+                FileManagement.components.utils.ProgressBarManager.updateProgress(progressId, 100, `Extracted ${fileName}`);
+                Ext.defer(function() {
+                    FileManagement.components.utils.ProgressBarManager.removeProgressBar(progressId);
+                }, 1200);
                 if (onSuccess) {
                     onSuccess(response);
                 } else {
@@ -41,6 +70,8 @@ Ext.define('FileManagement.components.utils.DecompressionUtil', {
                 if (grid) {
                     grid.setLoading(false);
                 }
+                FileManagement.components.utils.ProgressBarManager.markActivityStatus(progressId, 'failed', 'Failed');
+                FileManagement.components.utils.ProgressBarManager.removeProgressBar(progressId);
                 if (onFailure) {
                     onFailure(response);
                 } else {
