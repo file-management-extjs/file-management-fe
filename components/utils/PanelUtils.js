@@ -516,6 +516,10 @@ Ext.define('FileManagement.components.utils.PanelUtils', {
 
         this.registerPanelActivation(panel);
 
+        if (panel.preventWorkspaceResponsiveFit) {
+            return;
+        }
+
         if (panel.workspaceResponsivePrepared) {
             return;
         }
@@ -560,6 +564,10 @@ Ext.define('FileManagement.components.utils.PanelUtils', {
 
     fitPanelToWorkspace: function(panel) {
         if (!this.isWorkspacePanel(panel) || panel.destroyed || panel.destroying || panel.minimizedToTaskbar) {
+            return;
+        }
+
+        if (panel.preventWorkspaceResponsiveFit) {
             return;
         }
 

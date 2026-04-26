@@ -705,6 +705,59 @@ Ext.define('FileManagement.components.organizations.OrganizationAdminPanel', {
                             width: 220
                         }
                     ]
+                },
+                {
+                    xtype: 'fieldset',
+                    title: 'Content Intelligence',
+                    defaults: { anchor: '100%', labelWidth: 190, labelAlign: 'top' },
+                    items: [
+                        { xtype: 'checkbox', name: 'contentAiEnabled', boxLabel: 'Enable content intelligence for this organization', hideLabel: true },
+                        { xtype: 'checkbox', name: 'contentAiAutoUploads', boxLabel: 'Analyze new uploads in the background', hideLabel: true },
+                        {
+                            xtype: 'combo',
+                            name: 'contentAiProvider',
+                            fieldLabel: 'AI provider',
+                            editable: false,
+                            queryMode: 'local',
+                            store: [
+                                ['local', 'Local'],
+                                ['openai', 'OpenAI'],
+                                ['anthropic', 'Claude'],
+                                ['huggingface', 'HuggingFace'],
+                                ['generic', 'Generic API']
+                            ]
+                        },
+                        { xtype: 'textfield', name: 'contentAiModel', fieldLabel: 'Model' },
+                        { xtype: 'textfield', name: 'contentAiEndpoint', fieldLabel: 'Endpoint' },
+                        { xtype: 'textfield', name: 'contentAiApiKey', fieldLabel: 'API key', inputType: 'password' },
+                        { xtype: 'checkbox', name: 'contentAiOcrEnabled', boxLabel: 'Enable OCR for images and scanned PDFs', hideLabel: true },
+                        {
+                            xtype: 'combo',
+                            name: 'contentAiOcrProvider',
+                            fieldLabel: 'OCR provider',
+                            editable: false,
+                            queryMode: 'local',
+                            store: [
+                                ['local', 'Local Tesseract'],
+                                ['openai', 'OpenAI'],
+                                ['anthropic', 'Claude'],
+                                ['huggingface', 'HuggingFace'],
+                                ['generic', 'Generic API']
+                            ]
+                        },
+                        { xtype: 'textfield', name: 'contentAiOcrModel', fieldLabel: 'OCR model' },
+                        { xtype: 'textfield', name: 'contentAiOcrEndpoint', fieldLabel: 'OCR endpoint' },
+                        { xtype: 'textfield', name: 'contentAiOcrApiKey', fieldLabel: 'OCR API key', inputType: 'password' },
+                        { xtype: 'textfield', name: 'contentAiOcrLanguage', fieldLabel: 'OCR language' },
+                        { xtype: 'numberfield', name: 'contentAiOcrDpi', fieldLabel: 'OCR DPI', minValue: 120, maxValue: 400, allowDecimals: false },
+                        { xtype: 'checkbox', name: 'contentAiClassification', boxLabel: 'Classification', hideLabel: true },
+                        { xtype: 'checkbox', name: 'contentAiTagging', boxLabel: 'Smart tags', hideLabel: true },
+                        { xtype: 'checkbox', name: 'contentAiSummary', boxLabel: 'Summary', hideLabel: true },
+                        { xtype: 'checkbox', name: 'contentAiImageRecognition', boxLabel: 'Image recognition', hideLabel: true },
+                        { xtype: 'numberfield', name: 'contentAiMaxTextChars', fieldLabel: 'Max text chars', minValue: 1000, maxValue: 200000, allowDecimals: false },
+                        { xtype: 'numberfield', name: 'contentAiMaxFileSizeMb', fieldLabel: 'Max file MB', minValue: 1, maxValue: 1000, allowDecimals: false },
+                        { xtype: 'numberfield', name: 'contentAiMaxPages', fieldLabel: 'Max OCR pages', minValue: 1, maxValue: 100, allowDecimals: false }
+                    ]
                 }
             ],
             buttons: [
@@ -1711,6 +1764,59 @@ Ext.define('FileManagement.components.organizations.OrganizationAdminPanel', {
         return Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, 1000000) : null;
     },
 
+    normalizeBoundedInteger: function(value, fallback, min, max) {
+        const parsed = parseInt(value, 10);
+        if (!Number.isFinite(parsed)) {
+            return fallback;
+        }
+
+        return Math.max(min, Math.min(max, parsed));
+    },
+
+    trimValue: function(value) {
+        return String(value || '').trim();
+    },
+
+    collectContentIntelligenceSettingsPayload: function(values, existing = {}) {
+        const provider = existing.provider || {};
+        const ocr = existing.ocr || {};
+        const features = existing.features || {};
+        const limits = existing.limits || {};
+        const providerApiKey = this.trimValue(values.contentAiApiKey);
+        const ocrApiKey = this.trimValue(values.contentAiOcrApiKey);
+
+        return {
+            enabled: this.isCheckedValue(values.contentAiEnabled),
+            autoProcessUploads: this.isCheckedValue(values.contentAiAutoUploads),
+            provider: {
+                type: values.contentAiProvider || provider.type || 'local',
+                model: this.trimValue(values.contentAiModel),
+                endpoint: this.trimValue(values.contentAiEndpoint),
+                apiKey: providerApiKey || provider.apiKey || ''
+            },
+            ocr: {
+                enabled: this.isCheckedValue(values.contentAiOcrEnabled),
+                provider: values.contentAiOcrProvider || ocr.provider || 'local',
+                model: this.trimValue(values.contentAiOcrModel),
+                endpoint: this.trimValue(values.contentAiOcrEndpoint),
+                apiKey: ocrApiKey || ocr.apiKey || providerApiKey || provider.apiKey || '',
+                language: this.trimValue(values.contentAiOcrLanguage) || ocr.language || 'eng',
+                dpi: this.normalizeBoundedInteger(values.contentAiOcrDpi, ocr.dpi || 220, 120, 400)
+            },
+            features: {
+                classification: this.isCheckedValue(values.contentAiClassification),
+                tagging: this.isCheckedValue(values.contentAiTagging),
+                summarization: this.isCheckedValue(values.contentAiSummary),
+                imageRecognition: this.isCheckedValue(values.contentAiImageRecognition)
+            },
+            limits: {
+                maxTextChars: this.normalizeBoundedInteger(values.contentAiMaxTextChars, limits.maxTextChars || 40000, 1000, 200000),
+                maxFileSizeMb: this.normalizeBoundedInteger(values.contentAiMaxFileSizeMb, limits.maxFileSizeMb || 100, 1, 1000),
+                maxPages: this.normalizeBoundedInteger(values.contentAiMaxPages, limits.maxPages || 12, 1, 100)
+            }
+        };
+    },
+
     syncDownloadLimitField: function() {
         const enabledField = this.down('#downloadLimitEnabledField');
         const maxField = this.down('#maxDownloadsField');
@@ -1767,7 +1873,8 @@ Ext.define('FileManagement.components.organizations.OrganizationAdminPanel', {
                     allowedPermissions,
                     downloadLimitEnabled,
                     maxDownloads
-                }
+                },
+                contentIntelligence: this.collectContentIntelligenceSettingsPayload(values, settings.contentIntelligence || {})
             })
         };
     },
@@ -1776,7 +1883,14 @@ Ext.define('FileManagement.components.organizations.OrganizationAdminPanel', {
         const form = this.down('#settingsTab');
         if (!form || !organization) return;
 
-        const sharing = ((organization.settings || {}).sharing || {});
+        const settings = organization.settings || {};
+        const sharing = settings.sharing || {};
+        const contentIntelligence = settings.contentIntelligence || {};
+        const provider = contentIntelligence.provider || {};
+        const ocr = contentIntelligence.ocr || {};
+        const features = contentIntelligence.features || {};
+        const limits = contentIntelligence.limits || {};
+
         form.getForm().setValues({
             name: organization.name,
             description: organization.description,
@@ -1793,7 +1907,27 @@ Ext.define('FileManagement.components.organizations.OrganizationAdminPanel', {
             defaultPermission: sharing.defaultPermission || 'download',
             allowedPermissions: this.normalizeAllowedPermissions(sharing.allowedPermissions || ['view', 'download']),
             downloadLimitEnabled: sharing.downloadLimitEnabled === true,
-            maxDownloads: sharing.maxDownloads || 10
+            maxDownloads: sharing.maxDownloads || 10,
+            contentAiEnabled: contentIntelligence.enabled === true,
+            contentAiAutoUploads: contentIntelligence.autoProcessUploads === true,
+            contentAiProvider: provider.type || 'local',
+            contentAiModel: provider.model || '',
+            contentAiEndpoint: provider.endpoint || '',
+            contentAiApiKey: provider.apiKey || '',
+            contentAiOcrEnabled: ocr.enabled !== false,
+            contentAiOcrProvider: ocr.provider || 'local',
+            contentAiOcrModel: ocr.model || '',
+            contentAiOcrEndpoint: ocr.endpoint || '',
+            contentAiOcrApiKey: ocr.apiKey || '',
+            contentAiOcrLanguage: ocr.language || 'eng',
+            contentAiOcrDpi: ocr.dpi || 220,
+            contentAiClassification: features.classification !== false,
+            contentAiTagging: features.tagging !== false,
+            contentAiSummary: features.summarization !== false,
+            contentAiImageRecognition: features.imageRecognition !== false,
+            contentAiMaxTextChars: limits.maxTextChars || 40000,
+            contentAiMaxFileSizeMb: limits.maxFileSizeMb || 100,
+            contentAiMaxPages: limits.maxPages || 12
         });
         this.syncDownloadLimitField();
     },

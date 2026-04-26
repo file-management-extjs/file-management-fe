@@ -1689,12 +1689,26 @@ Ext.define('FileManagement.components.grids.FileGrid', {
         return `${sessionId || 'upload'}|${this.getFileSignature(file)}`;
     },
 
+    getUploadPlaceholderStates: function () {
+        if (this.destroyed || this.destroying) {
+            return null;
+        }
+
+        if (!this.uploadPlaceholderStates) {
+            this.uploadPlaceholderStates = {};
+        }
+
+        return this.uploadPlaceholderStates;
+    },
+
     createUploadPlaceholders: function (files, options = {}) {
         const filesArray = Array.from(files || []);
         const folderId = this.normalizeOperationFolderId(options.folderId);
         const workspaceId = options.workspaceId || this.getWorkspaceId();
+        const placeholderStates = this.getUploadPlaceholderStates();
 
         if (!filesArray.length || this.sharedMode || this.sharedByMeMode ||
+            !placeholderStates ||
             !this.isCurrentFolderForOperation(folderId) ||
             !this.isCurrentWorkspaceForOperation(workspaceId)) {
             return;
@@ -1702,7 +1716,7 @@ Ext.define('FileManagement.components.grids.FileGrid', {
 
         filesArray.forEach(file => {
             const key = this.getUploadPlaceholderKey(options.sessionId, file);
-            this.uploadPlaceholderStates[key] = {
+            placeholderStates[key] = {
                 key,
                 sessionId: options.sessionId || '',
                 folderId,
@@ -1770,6 +1784,11 @@ Ext.define('FileManagement.components.grids.FileGrid', {
 
         const activeRecoveryKeys = {};
         const sessions = uploadManager.getInterruptedSessions();
+        const placeholderStates = this.getUploadPlaceholderStates();
+
+        if (!placeholderStates) {
+            return;
+        }
 
         sessions.forEach(session => {
             if (!this.isCurrentFolderForOperation(session.folderId || '') ||
@@ -1783,11 +1802,11 @@ Ext.define('FileManagement.components.grids.FileGrid', {
                     const key = `recovery|${session.id}|${file.signature || `${file.name}|${file.size || 0}`}`;
                     activeRecoveryKeys[key] = true;
 
-                    if (this.uploadPlaceholderStates[key]) {
+                    if (placeholderStates[key]) {
                         return;
                     }
 
-                    this.uploadPlaceholderStates[key] = {
+                    placeholderStates[key] = {
                         key,
                         sessionId: session.id,
                         folderId: this.normalizeOperationFolderId(session.folderId || ''),
@@ -1808,7 +1827,7 @@ Ext.define('FileManagement.components.grids.FileGrid', {
                 });
         });
 
-        Object.keys(this.uploadPlaceholderStates || {}).forEach(key => {
+        Object.keys(placeholderStates).forEach(key => {
             if (key.indexOf('recovery|') === 0 && !activeRecoveryKeys[key]) {
                 this.clearUploadPlaceholder(key);
             }
@@ -1830,9 +1849,14 @@ Ext.define('FileManagement.components.grids.FileGrid', {
             return;
         }
 
+        const placeholderStates = this.getUploadPlaceholderStates();
+        if (!placeholderStates) {
+            return;
+        }
+
         let insertIndex = this.getUploadPlaceholderInsertIndex();
-        Object.keys(this.uploadPlaceholderStates || {}).forEach(key => {
-            const state = this.uploadPlaceholderStates[key];
+        Object.keys(placeholderStates).forEach(key => {
+            const state = placeholderStates[key];
             if (!state || state.completed ||
                 !this.isCurrentFolderForOperation(state.folderId) ||
                 !this.isCurrentWorkspaceForOperation(state.workspaceId || '') ||
@@ -1859,7 +1883,7 @@ Ext.define('FileManagement.components.grids.FileGrid', {
             );
 
             if (existingFile !== -1 && state.progress >= 100) {
-                delete this.uploadPlaceholderStates[key];
+                delete placeholderStates[key];
                 return;
             }
 
@@ -1873,7 +1897,8 @@ Ext.define('FileManagement.components.grids.FileGrid', {
 
     updateUploadPlaceholder: function (sessionId, file, progress, status = 'Uploading') {
         const key = this.getUploadPlaceholderKey(sessionId, file);
-        const state = this.uploadPlaceholderStates[key];
+        const placeholderStates = this.getUploadPlaceholderStates();
+        const state = placeholderStates ? placeholderStates[key] : null;
 
         if (!state) {
             return;
@@ -1890,7 +1915,8 @@ Ext.define('FileManagement.components.grids.FileGrid', {
 
     completeUploadPlaceholder: function (sessionId, file) {
         const key = this.getUploadPlaceholderKey(sessionId, file);
-        const state = this.uploadPlaceholderStates[key];
+        const placeholderStates = this.getUploadPlaceholderStates();
+        const state = placeholderStates ? placeholderStates[key] : null;
 
         if (!state) {
             return;
@@ -1928,7 +1954,8 @@ Ext.define('FileManagement.components.grids.FileGrid', {
 
     cancelUploadPlaceholder: function (sessionId, file, status = 'Cancelled') {
         const key = this.getUploadPlaceholderKey(sessionId, file);
-        const state = this.uploadPlaceholderStates[key];
+        const placeholderStates = this.getUploadPlaceholderStates();
+        const state = placeholderStates ? placeholderStates[key] : null;
 
         if (state) {
             state.status = status;
@@ -1948,7 +1975,10 @@ Ext.define('FileManagement.components.grids.FileGrid', {
             const record = this.findUploadPlaceholderRecord(key);
             const store = this.getStore();
 
-            delete this.uploadPlaceholderStates[key];
+            const placeholderStates = this.getUploadPlaceholderStates();
+            if (placeholderStates) {
+                delete placeholderStates[key];
+            }
 
             if (record && record.get('isUploadPlaceholder') && store) {
                 store.remove(record);
@@ -1982,9 +2012,14 @@ Ext.define('FileManagement.components.grids.FileGrid', {
             return;
         }
 
-        const state = this.uploadPlaceholderStates[key];
+        const placeholderStates = this.getUploadPlaceholderStates();
+        const state = placeholderStates ? placeholderStates[key] : null;
         const terminalUnavailable = status === 'infected' || status === 'error';
         const terminalClean = status === 'clean';
+
+        if (!state) {
+            return;
+        }
 
         state.fileId = data.fileId || state.fileId || '';
         state.filePath = data.filePath || data.path || state.filePath || '';
@@ -2035,6 +2070,7 @@ Ext.define('FileManagement.components.grids.FileGrid', {
         }
 
         const store = this.getStore();
+        const placeholderStates = this.getUploadPlaceholderStates();
         if (store) {
             const existingFile = store.findBy(record =>
                 !record.get('isUploadPlaceholder') &&
@@ -2048,7 +2084,11 @@ Ext.define('FileManagement.components.grids.FileGrid', {
         }
 
         const key = `scan|${data.fileId || data.filePath || fileName}|${folderId}`;
-        this.uploadPlaceholderStates[key] = {
+        if (!placeholderStates) {
+            return null;
+        }
+
+        placeholderStates[key] = {
             key,
             sessionId: 'scan-restore',
             folderId,
@@ -2098,7 +2138,7 @@ Ext.define('FileManagement.components.grids.FileGrid', {
         const hasFolderContext = folderValue !== undefined && folderValue !== null;
         const folderId = this.normalizeOperationFolderId(folderValue);
         const workspaceId = data.workspaceId || '';
-        const states = this.uploadPlaceholderStates || {};
+        const states = this.getUploadPlaceholderStates() || {};
         let fallbackKey = null;
 
         Object.keys(states).some(key => {

@@ -407,7 +407,7 @@ Ext.define('FileManagement.components.dialogs.ShareItemDialog', {
                             });
                         });
 
-                        targetField.getStore().loadData(rows);
+                        this.organizationShareTargetRows = rows;
                         this.applyOrganizationSharePolicy(policy, targets);
                     }
                 });
@@ -484,6 +484,12 @@ Ext.define('FileManagement.components.dialogs.ShareItemDialog', {
         this.syncShareTargetFields(targetTypeField ? targetTypeField.getValue() : null);
     },
 
+    getOrganizationTargetRows: function(targetType) {
+        return (this.organizationShareTargetRows || []).filter(function(row) {
+            return row.type === targetType;
+        });
+    },
+
     syncShareTargetFields: function(targetType) {
         targetType = targetType || 'member';
         const recipientField = this.down('#shareRecipientField');
@@ -500,9 +506,24 @@ Ext.define('FileManagement.components.dialogs.ShareItemDialog', {
         targetField.setHidden(!usesOrganizationTarget);
         targetField.allowBlank = !usesOrganizationTarget;
 
-        if (targetType === 'organization' && this.organizationContext && this.organizationContext.organization) {
-            targetField.setValue(this.organizationContext.organization.id);
-        } else if (targetType === 'team') {
+        if (usesOrganizationTarget) {
+            const targetRows = this.getOrganizationTargetRows(targetType);
+            targetField.setFieldLabel(targetType === 'organization' ? 'Organization' : 'Team');
+            targetField.getStore().loadData(targetRows);
+            targetField.setDisabled(!targetRows.length);
+
+            if (targetType === 'organization') {
+                targetField.setValue(targetRows.length ? targetRows[0].id : null);
+            } else {
+                const currentValue = targetField.getValue();
+                const currentValueStillAvailable = targetRows.some(function(row) {
+                    return row.id === currentValue;
+                });
+                targetField.setValue(currentValueStillAvailable ? currentValue : null);
+            }
+        } else {
+            targetField.getStore().loadData([]);
+            targetField.setDisabled(false);
             targetField.setValue(null);
         }
 

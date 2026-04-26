@@ -18,7 +18,7 @@ Ext.define('FileManagement.components.status.ActivityCenterPanel', {
     closable: true,
     width: 980,
     height: 620,
-    minWidth: 720,
+    minWidth: 320,
     minHeight: 460,
     bodyPadding: 8,
     bodyCls: 'activity-center-body',
@@ -40,7 +40,7 @@ Ext.define('FileManagement.components.status.ActivityCenterPanel', {
         constrain: true,
         dynamic: true,
         minHeight: 460,
-        minWidth: 720
+        minWidth: 320
     },
 
     tools: [
@@ -214,7 +214,7 @@ Ext.define('FileManagement.components.status.ActivityCenterPanel', {
                     updatedAt: session.updatedAt || session.createdAt,
                     createdAt: session.createdAt || session.updatedAt,
                     canOpenPanel: true,
-                    canCancel: false,
+                    canCancel: true,
                     sessionId: session.id
                 });
             });
@@ -469,6 +469,7 @@ Ext.define('FileManagement.components.status.ActivityCenterPanel', {
                 { name: 'canOpenPanel', type: 'boolean' },
                 { name: 'relatedProgressId', type: 'string' },
                 { name: 'jobId', type: 'string' },
+                { name: 'sessionId', type: 'string' },
                 { name: 'fileCount', type: 'number' },
                 { name: 'sortWeight', type: 'number' },
                 { name: 'history', type: 'boolean' }
@@ -484,12 +485,17 @@ Ext.define('FileManagement.components.status.ActivityCenterPanel', {
             listeners: {
                 afterrender: function(panel) {
                     panel.getEl().setStyle('position', 'absolute');
+                    panel.applyResponsiveLayout();
                     panel.reloadActivities();
                     if (Ext.GlobalEvents) {
                         panel.mon(Ext.GlobalEvents, 'activitycenterchanged', panel.scheduleReloadActivities, panel);
                     }
                 },
+                resize: function(panel) {
+                    panel.applyResponsiveLayout();
+                },
                 show: function(panel) {
+                    panel.applyResponsiveLayout();
                     panel.reloadActivities();
                 },
                 destroy: function(panel) {
@@ -584,6 +590,7 @@ Ext.define('FileManagement.components.status.ActivityCenterPanel', {
                     text: 'Cancel',
                     itemId: 'cancelActivityButton',
                     iconCls: 'fa fa-ban',
+                    tooltip: 'Cancel activity',
                     disabled: true,
                     handler: function() {
                         me.cancelSelectedActivity();
@@ -593,6 +600,7 @@ Ext.define('FileManagement.components.status.ActivityCenterPanel', {
                     text: 'Open Details',
                     itemId: 'openActivityButton',
                     iconCls: 'fa fa-up-right-from-square',
+                    tooltip: 'Open details',
                     disabled: true,
                     handler: function() {
                         me.openSelectedActivityDetails();
@@ -616,13 +624,29 @@ Ext.define('FileManagement.components.status.ActivityCenterPanel', {
             height: 92,
             margin: '0 0 8 0',
             layout: {
-                type: 'hbox',
+                type: 'vbox',
                 align: 'stretch'
             },
-            defaults: {
-                margin: '0 8 0 0'
-            },
-            items: cards
+            items: [{
+                xtype: 'container',
+                itemId: 'activitySummaryTopRow',
+                flex: 1,
+                layout: {
+                    type: 'hbox',
+                    align: 'stretch'
+                },
+                items: cards
+            }, {
+                xtype: 'container',
+                itemId: 'activitySummaryBottomRow',
+                flex: 1,
+                hidden: true,
+                layout: {
+                    type: 'hbox',
+                    align: 'stretch'
+                },
+                items: []
+            }]
         };
     },
 
@@ -678,12 +702,43 @@ Ext.define('FileManagement.components.status.ActivityCenterPanel', {
                         const detail = record.get('detail');
                         const encodedTitle = Ext.String.htmlEncode(value || 'Background job');
                         const encodedDetail = Ext.String.htmlEncode(detail || '');
+                        const type = Ext.String.htmlEncode(record.get('isAffectedRow')
+                            ? (record.get('fileType') || 'File')
+                            : (record.get('activityType') || ''));
+                        const count = Number(record.get('affectedFileCount')) || 0;
+                        const files = count ? `${count} ${count === 1 ? 'file' : 'files'}` : '';
+                        const status = Ext.String.htmlEncode(record.get('statusText') || '');
+                        const statusGroup = Ext.String.htmlEncode(record.get('statusGroup') || 'active');
+                        const updatedAt = record.get('updatedAt');
+                        const updatedText = updatedAt ? Ext.Date.format(updatedAt, 'M j, g:i A') : '';
+                        const path = Ext.String.htmlEncode(record.get('filePath') || '');
                         const rowClass = record.get('isAffectedRow')
                             ? 'activity-center-title activity-center-file-title'
                             : 'activity-center-title';
 
                         if (detail) {
                             meta.tdAttr = `data-qtip="${encodedDetail}"`;
+                        }
+
+                        if (me.compactLayout) {
+                            const progress = (record.get('isAffectedRow') && record.get('showProgress') !== true)
+                                ? ''
+                                : me.renderProgress(record.get('progress'));
+                            const compactMeta = [
+                                type,
+                                files,
+                                path || updatedText
+                            ].filter(Boolean).join(' · ');
+
+                            return [
+                                `<div class="${rowClass}">${encodedTitle}</div>`,
+                                encodedDetail ? `<div class="activity-center-detail">${encodedDetail}</div>` : '',
+                                compactMeta ? `<div class="activity-center-compact-meta">${compactMeta}</div>` : '',
+                                '<div class="activity-center-compact-footer">',
+                                progress ? `<div class="activity-center-compact-progress">${progress}</div>` : '',
+                                status ? `<span class="activity-center-status activity-center-status-${statusGroup}">${status}</span>` : '',
+                                '</div>'
+                            ].join('');
                         }
 
                         return [
@@ -1020,10 +1075,144 @@ Ext.define('FileManagement.components.status.ActivityCenterPanel', {
             }
         });
 
-        this.updateSummaryCard('activeActivityCard', 'Active', counts.active, 'Jobs running now', 'fa fa-play blue-icon');
-        this.updateSummaryCard('attentionActivityCard', 'Needs Attention', counts.attention, 'Interrupted or cancelled work', 'fa fa-circle-exclamation orange-icon');
-        this.updateSummaryCard('failedActivityCard', 'Failed', counts.failed, 'Jobs that ended with errors', 'fa fa-triangle-exclamation red-icon');
-        this.updateSummaryCard('totalActivityCard', 'Tracked', counts.total, 'Visible background jobs', 'fa fa-list-check blue-icon');
+        const compact = this.compactLayout === true;
+        this.updateSummaryCard('activeActivityCard', 'Active', counts.active, compact ? '' : 'Jobs running now', 'fa fa-play blue-icon');
+        this.updateSummaryCard('attentionActivityCard', compact ? 'Needs' : 'Needs Attention', counts.attention, compact ? '' : 'Interrupted or cancelled work', 'fa fa-circle-exclamation orange-icon');
+        this.updateSummaryCard('failedActivityCard', 'Failed', counts.failed, compact ? '' : 'Jobs that ended with errors', 'fa fa-triangle-exclamation red-icon');
+        this.updateSummaryCard('totalActivityCard', compact ? 'Total' : 'Tracked', counts.total, compact ? '' : 'Visible background jobs', 'fa fa-list-check blue-icon');
+    },
+
+    applyResponsiveLayout: function() {
+        if (this.destroyed || this.destroying) {
+            return;
+        }
+
+        const width = this.getWidth ? this.getWidth() : this.width;
+        const compact = Number(width) > 0 && Number(width) < 560;
+
+        if (this.compactLayout === compact) {
+            return;
+        }
+
+        this.compactLayout = compact;
+        if (compact) {
+            this.addCls('activity-center-compact');
+        } else {
+            this.removeCls('activity-center-compact');
+        }
+
+        const summaryRow = this.down('#activitySummaryRow');
+        if (summaryRow && summaryRow.setHeight) {
+            summaryRow.setHeight(compact ? 110 : 92);
+        }
+        this.applySummaryCardLayout(compact);
+
+        const typeFilter = this.down('#typeFilter');
+        if (typeFilter && typeFilter.setWidth) {
+            typeFilter.setWidth(compact ? 132 : 170);
+        }
+
+        const statusFilter = this.down('#statusFilter');
+        if (statusFilter && statusFilter.setWidth) {
+            statusFilter.setWidth(compact ? 118 : 150);
+            statusFilter.setVisible(!compact);
+        }
+
+        const cancelButton = this.down('#cancelActivityButton');
+        if (cancelButton && cancelButton.setText) {
+            cancelButton.setText(compact ? '' : 'Cancel');
+        }
+
+        const openButton = this.down('#openActivityButton');
+        if (openButton && openButton.setText) {
+            openButton.setText(compact ? '' : 'Open Details');
+        }
+
+        this.applyResponsiveColumns();
+        if (this.rawActivities) {
+            this.updateSummary(this.rawActivities);
+        }
+    },
+
+    applySummaryCardLayout: function(compact) {
+        const topRow = this.down('#activitySummaryTopRow');
+        const bottomRow = this.down('#activitySummaryBottomRow');
+        const cards = [
+            this.down('#activeActivityCard'),
+            this.down('#attentionActivityCard'),
+            this.down('#failedActivityCard'),
+            this.down('#totalActivityCard')
+        ].filter(Boolean);
+
+        if (!topRow || !bottomRow || cards.length !== 4) {
+            return;
+        }
+
+        if (compact) {
+            if (cards[2].ownerCt !== bottomRow) {
+                bottomRow.add(cards[2]);
+            }
+            if (cards[3].ownerCt !== bottomRow) {
+                bottomRow.add(cards[3]);
+            }
+            if (bottomRow.show) {
+                bottomRow.show();
+            }
+            if (topRow.setMargin) {
+                topRow.setMargin('0 0 6 0');
+            }
+            this.setSummaryCardMargins([cards[0], cards[1]], 6);
+            this.setSummaryCardMargins([cards[2], cards[3]], 6);
+        } else {
+            if (cards[2].ownerCt !== topRow) {
+                topRow.add(cards[2]);
+            }
+            if (cards[3].ownerCt !== topRow) {
+                topRow.add(cards[3]);
+            }
+            if (bottomRow.hide) {
+                bottomRow.hide();
+            }
+            if (topRow.setMargin) {
+                topRow.setMargin('0');
+            }
+            this.setSummaryCardMargins(cards, 8);
+        }
+
+        if (topRow.updateLayout) {
+            topRow.updateLayout();
+        }
+        if (bottomRow.updateLayout) {
+            bottomRow.updateLayout();
+        }
+    },
+
+    setSummaryCardMargins: function(cards, gutter) {
+        Ext.Array.forEach(cards, function(card, index) {
+            if (card && card.setMargin) {
+                card.setMargin(index === cards.length - 1 ? '0' : `0 ${gutter} 0 0`);
+            }
+        });
+    },
+
+    applyResponsiveColumns: function() {
+        const grid = this.down('#activityGrid');
+        if (!grid || !grid.headerCt) {
+            return;
+        }
+
+        Ext.Array.forEach(grid.headerCt.getGridColumns(), function(column) {
+            const dataIndex = column.dataIndex;
+            if (!dataIndex || dataIndex === 'iconCls' || dataIndex === 'title') {
+                return;
+            }
+
+            column.setVisible(this.compactLayout !== true);
+        }, this);
+
+        if (grid.getView && grid.getView().refresh) {
+            grid.getView().refresh();
+        }
     },
 
     updateSummaryCard: function(itemId, label, value, hint, iconCls) {
@@ -1186,8 +1375,33 @@ Ext.define('FileManagement.components.status.ActivityCenterPanel', {
 
         const progressId = record.get('relatedProgressId');
         const jobId = record.get('jobId');
+        const source = record.get('source');
+        const sessionId = record.get('sessionId');
         const progressManager = FileManagement.components.utils.ProgressBarManager;
         const progressBar = progressId && progressManager ? progressManager.getProgressBar(progressId) : null;
+
+        if (source === 'recovery' && sessionId) {
+            const uploadManager = FileManagement.components.utils.UploadSessionManager;
+            const sessions = uploadManager && uploadManager.getSessions
+                ? uploadManager.getSessions().filter(function(session) {
+                    return session.id === sessionId;
+                })
+                : [];
+
+            if (sessions.length && uploadManager.discardSessions) {
+                uploadManager.discardSessions(sessions);
+                this.recordActivitySnapshot(record.data, {
+                    status: 'cancelled',
+                    statusText: 'Cancelled',
+                    statusGroup: 'attention',
+                    canCancel: false,
+                    canOpenPanel: false
+                });
+                this.refreshActivities();
+            }
+
+            return;
+        }
 
         if (progressBar && typeof progressBar.cancelCallback === 'function') {
             Promise.resolve(progressBar.cancelCallback(progressBar)).catch(function(error) {

@@ -159,7 +159,7 @@ Ext.define('FileManagement.components.forms.FileUploadForm', {
             currentFolderId,
             workspaceId
         );
-        const operationGrid = fileGrid && fileGrid.createUploadPlaceholders ? fileGrid : null;
+        const operationGrid = this.getLiveOperationGrid(fileGrid, 'createUploadPlaceholders');
         let wasCancelled = false;
         let userCancelled = false;
 
@@ -230,8 +230,9 @@ Ext.define('FileManagement.components.forms.FileUploadForm', {
                 );
                 completedBytes += Number(file.size) || 0;
                 uploadSessionManager.completeFile(sessionId, file);
-                if (operationGrid && operationGrid.completeUploadPlaceholder) {
-                    operationGrid.completeUploadPlaceholder(sessionId, file);
+                const completionGrid = this.getLiveOperationGrid(operationGrid, 'completeUploadPlaceholder');
+                if (completionGrid) {
+                    completionGrid.completeUploadPlaceholder(sessionId, file);
                 }
                 FileManagement.components.utils.ProgressBarManager.updateQueuedStatus(progressId, file.name, 'Uploaded');
             } catch (error) {
@@ -244,13 +245,15 @@ Ext.define('FileManagement.components.forms.FileUploadForm', {
                         } else {
                             uploadSessionManager.removeSession(sessionId);
                         }
-                        if (operationGrid && operationGrid.cancelUploadPlaceholder) {
-                            operationGrid.cancelUploadPlaceholder(sessionId, file, 'Cancelled');
+                        const cancelGrid = this.getLiveOperationGrid(operationGrid, 'cancelUploadPlaceholder');
+                        if (cancelGrid) {
+                            cancelGrid.cancelUploadPlaceholder(sessionId, file, 'Cancelled');
                         }
                     } else {
                         uploadSessionManager.interruptSession(sessionId);
-                        if (operationGrid && operationGrid.cancelUploadPlaceholder) {
-                            operationGrid.cancelUploadPlaceholder(sessionId, file, 'Interrupted');
+                        const interruptGrid = this.getLiveOperationGrid(operationGrid, 'cancelUploadPlaceholder');
+                        if (interruptGrid) {
+                            interruptGrid.cancelUploadPlaceholder(sessionId, file, 'Interrupted');
                         }
                     }
                     FileManagement.components.utils.ProgressBarManager.updateProgress(progressId, 0, 'Upload Canceled');
@@ -258,8 +261,9 @@ Ext.define('FileManagement.components.forms.FileUploadForm', {
                 } else {
                     console.error('Error during upload:', error);
                     uploadSessionManager.interruptSession(sessionId);
-                    if (operationGrid && operationGrid.cancelUploadPlaceholder) {
-                        operationGrid.cancelUploadPlaceholder(sessionId, file, 'Failed');
+                    const failedGrid = this.getLiveOperationGrid(operationGrid, 'cancelUploadPlaceholder');
+                    if (failedGrid) {
+                        failedGrid.cancelUploadPlaceholder(sessionId, file, 'Failed');
                     }
                     failedFiles.push(file.name);
                     FileManagement.components.utils.ProgressBarManager.updateQueuedStatus(progressId, file.name, 'Failed');
@@ -291,6 +295,18 @@ Ext.define('FileManagement.components.forms.FileUploadForm', {
         }
     },
 
+    getLiveOperationGrid: function (grid, methodName = null) {
+        if (!grid || grid.destroyed || grid.destroying) {
+            return null;
+        }
+
+        if (methodName && typeof grid[methodName] !== 'function') {
+            return null;
+        }
+
+        return grid;
+    },
+
     uploadFileInChunks: async function (file, progressId, chunkSize, abortSignal, hasRetriedFromScratch = false, options = {}) {
         let start = 0;
         let resumedUpload = false;
@@ -305,7 +321,10 @@ Ext.define('FileManagement.components.forms.FileUploadForm', {
         const workspaceId = options.workspaceId !== undefined
             ? (options.workspaceId || '')
             : (fileGrid && fileGrid.getWorkspaceId ? fileGrid.getWorkspaceId() : '');
-        const operationGrid = options.fileGrid || (fileGrid && fileGrid.updateUploadPlaceholder ? fileGrid : null);
+        const operationGrid = this.getLiveOperationGrid(
+            options.fileGrid || fileGrid,
+            'updateUploadPlaceholder'
+        );
         const sessionId = options.sessionId || null;
         const fileIndex = Number(options.fileIndex) || 0;
         const totalFiles = Math.max(Number(options.totalFiles) || 1, 1);
@@ -351,8 +370,9 @@ Ext.define('FileManagement.components.forms.FileUploadForm', {
                             file,
                             resumedProgress
                         );
-                        if (operationGrid && operationGrid.updateUploadPlaceholder) {
-                            operationGrid.updateUploadPlaceholder(sessionId, file, resumedProgress, 'Uploading');
+                        const resumedGrid = this.getLiveOperationGrid(operationGrid, 'updateUploadPlaceholder');
+                        if (resumedGrid) {
+                            resumedGrid.updateUploadPlaceholder(sessionId, file, resumedProgress, 'Uploading');
                         }
                     }
                 }
@@ -390,8 +410,9 @@ Ext.define('FileManagement.components.forms.FileUploadForm', {
                 FileManagement.components.utils.ProgressBarManager.updateProgress(progressId, aggregateProgress, progressLabel);
                 if (sessionId) {
                     FileManagement.components.utils.UploadSessionManager.updateFileProgress(sessionId, file, progress);
-                    if (operationGrid && operationGrid.updateUploadPlaceholder) {
-                        operationGrid.updateUploadPlaceholder(sessionId, file, progress, 'Uploading');
+                    const progressGrid = this.getLiveOperationGrid(operationGrid, 'updateUploadPlaceholder');
+                    if (progressGrid) {
+                        progressGrid.updateUploadPlaceholder(sessionId, file, progress, 'Uploading');
                     }
                 }
             }

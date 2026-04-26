@@ -198,18 +198,19 @@ Ext.define('FileManagement.components.viewers.ImageViewer', {
                         image.src = objectURL;
                         image.onload = () => {
                             const { width: naturalWidth, height: naturalHeight } = image;
-                            const screenWidth = window.innerWidth;
-                            const screenHeight = window.innerHeight;
+                            const viewerFactory = FileManagement.components.viewers.ViewerFactory;
 
-                            // Adjust panel size based on image dimensions
-                            viewerPanel.setSize(
-                                Math.min(naturalWidth, screenWidth * 0.9),
-                                Math.min(naturalHeight, screenHeight * 0.9)
-                            );
+                            if (viewerFactory && viewerFactory.applyDefaultViewerSize) {
+                                viewerFactory.applyDefaultViewerSize(viewerPanel, {
+                                    preferredWidth: naturalWidth,
+                                    preferredHeight: naturalHeight,
+                                    force: true
+                                });
+                            }
 
                             // Set minimum dimensions for usability
-                            viewerPanel.setMinWidth(300);
-                            viewerPanel.setMinHeight(200);
+                            viewerPanel.setMinWidth(Math.min(viewerPanel.minWidth || 300, viewerPanel.getWidth ? viewerPanel.getWidth() : 300));
+                            viewerPanel.setMinHeight(Math.min(viewerPanel.minHeight || 200, viewerPanel.getHeight ? viewerPanel.getHeight() : 200));
                         };
                     } catch (error) {
                         Ext.Msg.alert('Error', 'Failed to load the image.');

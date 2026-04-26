@@ -897,6 +897,96 @@
     top: 0;
 }
 
+.activity-center-compact .x-panel-body.activity-center-body {
+    padding: 6px !important;
+}
+
+.activity-center-compact .activity-center-card {
+    min-width: 0;
+}
+
+.activity-center-compact .activity-center-card .x-panel-body {
+    padding: 5px !important;
+}
+
+.activity-center-compact .activity-center-metric {
+    gap: 4px;
+    justify-content: center;
+}
+
+.activity-center-compact .activity-center-metric > i {
+    font-size: 17px;
+    width: 18px;
+}
+
+.activity-center-compact .activity-center-metric-label {
+    font-size: 9px;
+    line-height: 12px;
+}
+
+.activity-center-compact .activity-center-metric-value {
+    font-size: 21px;
+    line-height: 22px;
+}
+
+.activity-center-compact .activity-center-metric-hint {
+    display: none;
+}
+
+.activity-center-compact .activity-center-grid .x-grid-cell-inner {
+    padding-bottom: 7px;
+    padding-top: 7px;
+    white-space: normal;
+}
+
+.activity-center-compact .activity-center-title,
+.activity-center-compact .activity-center-detail,
+.activity-center-compact .activity-center-compact-meta {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.activity-center-compact .activity-center-title {
+    line-height: 16px;
+}
+
+.activity-center-compact .activity-center-detail,
+.activity-center-compact .activity-center-compact-meta {
+    color: #52677d;
+    font-size: 11px;
+    line-height: 15px;
+}
+
+.activity-center-compact .activity-center-compact-footer {
+    align-items: center;
+    display: flex;
+    gap: 6px;
+    margin-top: 4px;
+    min-width: 0;
+}
+
+.activity-center-compact .activity-center-compact-progress {
+    flex: 1 1 auto;
+    min-width: 76px;
+}
+
+.activity-center-compact .activity-center-progress-shell {
+    height: 16px;
+}
+
+.activity-center-compact .activity-center-progress-shell span {
+    line-height: 16px;
+}
+
+.activity-center-compact .activity-center-status {
+    flex: 0 1 auto;
+    font-size: 11px;
+    line-height: 16px;
+    min-width: 0;
+    padding: 0 5px;
+}
+
 .workspace-metric-panel .x-panel-body {
     overflow: hidden;
 }

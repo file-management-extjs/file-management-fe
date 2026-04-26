@@ -15,6 +15,42 @@ Ext.define('FileManagement.components.utils.SocketManager', {
     backgroundActivityRestorePromise: null,
     scanGridRefreshTask: null,
 
+    humanizeProviderError: function(message) {
+        const raw = String(message || '').trim();
+        if (!raw) {
+            return '';
+        }
+
+        const jsonStart = raw.indexOf('{');
+        if (jsonStart === -1) {
+            return raw;
+        }
+
+        const prefix = raw.slice(0, jsonStart)
+            .replace(/Provider request failed with HTTP \d+:\s*$/i, '')
+            .trim();
+
+        try {
+            const parsed = Ext.decode(raw.slice(jsonStart), true);
+            const errorPayload = parsed && parsed.error ? parsed.error : parsed;
+            const providerMessage = errorPayload && errorPayload.message
+                ? String(errorPayload.message)
+                : (parsed && parsed.message ? String(parsed.message) : '');
+            const modelMatch = providerMessage.match(/model '([^']+)'/i);
+            let friendly = providerMessage;
+
+            if (errorPayload && errorPayload.code === 'model_not_supported') {
+                friendly = modelMatch
+                    ? `The selected model ${modelMatch[1]} is not supported by your enabled HuggingFace providers. Choose a supported vision-capable model or enable a provider for this model in HuggingFace.`
+                    : 'The selected HuggingFace model is not supported by your enabled providers. Choose a supported vision-capable model or enable a provider for this model in HuggingFace.';
+            }
+
+            return [prefix, friendly].filter(Boolean).join(' ');
+        } catch (error) {
+            return raw;
+        }
+    },
+
     initSocket: function() {
             const token = FileManagement.helpers.Functions.getToken();
             const userId = FileManagement.helpers.Functions.getUserId();
@@ -524,9 +560,10 @@ Ext.define('FileManagement.components.utils.SocketManager', {
 	                { category: 'conversions' }
 	            );
 	        } else if (data.status === 'failed') {
+	            const errorMessage = this.humanizeProviderError(data.error || 'Content intelligence failed.');
 	            Ext.Msg.show({
 	                title: 'Content Intelligence Error',
-	                message: data.error || 'Content intelligence failed.',
+	                message: errorMessage || 'Content intelligence failed.',
 	                buttons: Ext.Msg.OK,
 	                icon: Ext.Msg.ERROR
 	            });
