@@ -82,6 +82,10 @@ Ext.define('FileManagement.components.utils.PanelUtils', {
         }
 
         if (panel.isXType && panel.isXType('filegrid')) {
+            if (panel.listMode === 'privateVault') {
+                return null;
+            }
+
             return {
                 type: 'filegrid',
                 mode: panel.listMode || (panel.sharedMode ? 'sharedWithMe' : panel.sharedByMeMode ? 'sharedByMe' : 'files')
@@ -1044,11 +1048,17 @@ Ext.define('FileManagement.components.utils.PanelUtils', {
     },
 
     getFileGridByMode: function(mode = 'files') {
-        const normalizedMode = mode === 'sharedWithMe' || mode === 'sharedByMe' ? mode : 'files';
+        const normalizedMode = this.normalizeFileGridMode(mode);
         return Ext.Array.findBy(Ext.ComponentQuery.query('filegrid'), function(grid) {
             const gridMode = grid.listMode || 'files';
             return gridMode === normalizedMode;
         }) || null;
+    },
+
+    normalizeFileGridMode: function(mode = 'files') {
+        return mode === 'sharedWithMe' || mode === 'sharedByMe' || mode === 'privateVault'
+            ? mode
+            : 'files';
     },
 
     getPrimaryFileGrid: function() {
@@ -1100,23 +1110,25 @@ Ext.define('FileManagement.components.utils.PanelUtils', {
             return null;
         }
 
-        const normalizedMode = mode === 'sharedWithMe' || mode === 'sharedByMe' ? mode : 'files';
+        const normalizedMode = this.normalizeFileGridMode(mode);
         const toggleButton = normalizedMode === 'files'
             ? (options.refBottomToolbarButton || this.getFileExplorerToggleButton())
             : null;
         const fileGridStore = Ext.create('FileManagement.components.stores.FileGridStore', {
             autoLoad: false
         });
-        const modeOffset = normalizedMode === 'sharedWithMe' ? 18 : normalizedMode === 'sharedByMe' ? 36 : 0;
+        const modeOffset = normalizedMode === 'sharedWithMe' ? 18 : normalizedMode === 'sharedByMe' ? 36 : normalizedMode === 'privateVault' ? 54 : 0;
         const titleByMode = {
             files: 'Files Explorer',
             sharedWithMe: 'Shared With Me',
-            sharedByMe: 'Shared By Me'
+            sharedByMe: 'Shared By Me',
+            privateVault: 'Private Vault'
         };
         const iconByMode = {
             files: 'fa fa-folder-open',
             sharedWithMe: 'fa fa-share-nodes',
-            sharedByMe: 'fa fa-share-from-square'
+            sharedByMe: 'fa fa-share-from-square',
+            privateVault: 'fa fa-user-lock'
         };
 
         const fileGridPanel = Ext.create('FileManagement.components.grids.FileGrid', {
@@ -1127,6 +1139,10 @@ Ext.define('FileManagement.components.utils.PanelUtils', {
             listMode: normalizedMode,
             sharedMode: normalizedMode === 'sharedWithMe',
             sharedByMeMode: normalizedMode === 'sharedByMe',
+            privateVaultMode: normalizedMode === 'privateVault',
+            privateVaultRootId: options.privateVaultRootId || '',
+            privateVaultName: options.privateVaultName || 'Private Vault',
+            workspaceId: options.workspaceId || '',
             x: options.x || (36 + modeOffset),
             y: options.y || (34 + modeOffset),
             refBottomToolbarButton: toggleButton || null,
@@ -1140,6 +1156,14 @@ Ext.define('FileManagement.components.utils.PanelUtils', {
 
         if (fileGridPanel.setListMode) {
             fileGridPanel.setListMode(normalizedMode, { skipLoad: true });
+        }
+
+        if (normalizedMode === 'privateVault' && options.privateVaultRootId && fileGridPanel.openPrivateVaultRoot) {
+            fileGridPanel.openPrivateVaultRoot({
+                rootFolderId: options.privateVaultRootId,
+                workspaceId: options.workspaceId || fileGridPanel.workspaceId,
+                name: options.privateVaultName || 'Private Vault'
+            }, { skipLoad: true });
         }
 
         if (fileGridPanel.loadFiles) {
@@ -1164,7 +1188,7 @@ Ext.define('FileManagement.components.utils.PanelUtils', {
     },
 
     openFileGridMode: function(mode, options = {}) {
-        const normalizedMode = mode === 'sharedWithMe' || mode === 'sharedByMe' ? mode : 'files';
+        const normalizedMode = this.normalizeFileGridMode(mode);
         let fileGridPanel = this.getFileGridByMode(normalizedMode);
 
         if (!fileGridPanel) {
@@ -1179,6 +1203,14 @@ Ext.define('FileManagement.components.utils.PanelUtils', {
 
             this.bringPanelForward(fileGridPanel);
             this.updateNavigationPanelList();
+        }
+
+        if (normalizedMode === 'privateVault' && options.privateVaultRootId && fileGridPanel && fileGridPanel.openPrivateVaultRoot) {
+            fileGridPanel.openPrivateVaultRoot({
+                rootFolderId: options.privateVaultRootId,
+                workspaceId: options.workspaceId || fileGridPanel.workspaceId,
+                name: options.privateVaultName || 'Private Vault'
+            });
         }
 
         if (normalizedMode === 'files') {
@@ -1200,6 +1232,10 @@ Ext.define('FileManagement.components.utils.PanelUtils', {
 
     openSharedByMe: function() {
         return this.openFileGridMode('sharedByMe');
+    },
+
+    openPrivateVault: function(options = {}) {
+        return this.openFileGridMode('privateVault', options);
     },
 
     openUploadForm: function() {

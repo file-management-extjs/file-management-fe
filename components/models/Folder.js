@@ -8,6 +8,8 @@ Ext.define('FileManagement.components.models.Folder', {
         { name: 'expanded', type: 'boolean', defaultValue: false }, // Expanded state
         { name: 'leaf', type: 'boolean', defaultValue: false }, // Whether it's a leaf node
         { name: 'iconCls', type: 'string', defaultValue: 'fa fa-solid fa-folder' },
+        { name: 'isLocked', type: 'boolean', defaultValue: false },
+        { name: 'isPrivateVaultRoot', type: 'boolean', defaultValue: false },
     ],
     idProperty: 'id' // Use the backend's `id` field as the unique identifier
 });

@@ -161,6 +161,7 @@ Ext.define('FileManagement.components.stores.FileGridStore', {
         { name: 'parent_id', type: 'string', allowNull: true },
         { name: 'ancestors', type: 'auto' },
         { name: 'isLocked', type: 'boolean' },
+        { name: 'isPrivateVaultRoot', type: 'boolean' },
         { name: 'isShared', type: 'boolean' },
         { name: 'isSharedByMe', type: 'boolean' },
         { name: 'sharedBy', type: 'string' },

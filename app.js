@@ -84,6 +84,7 @@ Ext.application({
         'FileManagement.components.viewers.ViewerFactory',
         'FileManagement.components.utils.PanelUtils',
         'FileManagement.components.utils.WorkspaceContext',
+        'FileManagement.components.utils.PrivateVaultManager',
         'FileManagement.components.navigation.NavigationPanel',
         'FileManagement.components.navigation.UserToolbar',
         'FileManagement.components.dashboard.HomeDashboard',

@@ -18,7 +18,8 @@ Ext.define('FileManagement.components.navigation.NavigationPanel', {
         'FileManagement.components.status.DocumentConversionQueuePanel',
         'FileManagement.components.status.ActivityCenterPanel',
         'FileManagement.components.organizations.OrganizationAdminPanel',
-        'FileManagement.components.utils.WorkspaceContext'
+        'FileManagement.components.utils.WorkspaceContext',
+        'FileManagement.components.utils.PrivateVaultManager'
     ],
 
     mobileOverlayBreakpoint: 720,
@@ -55,6 +56,7 @@ Ext.define('FileManagement.components.navigation.NavigationPanel', {
 
         this.callParent();
         this.refreshActivityCenterCount();
+        Ext.defer(this.syncPrivateVaultNavigationState, 50, this);
     },
 
     isMobileOverlayMode: function(width) {
@@ -81,7 +83,7 @@ Ext.define('FileManagement.components.navigation.NavigationPanel', {
                 selectedItemCls: 'workspace-navigation-item-selected'
             },
             store: Ext.create('Ext.data.TreeStore', {
-                fields: ['text', 'action', 'baseText', 'panelRef', 'badgeCount', 'iconCls', 'nodeKey'],
+                fields: ['text', 'action', 'baseText', 'panelRef', 'badgeCount', 'iconCls', 'nodeKey', 'disabled'],
                 root: {
                     expanded: true,
                     children: me.getNavigationTreeChildren()
@@ -188,6 +190,7 @@ Ext.define('FileManagement.components.navigation.NavigationPanel', {
                     if (Ext.GlobalEvents) {
                         combo.mon(Ext.GlobalEvents, 'workspacecontextchanged', function() {
                             me.refreshWorkspaceSelector(combo);
+                            me.syncPrivateVaultNavigationState();
                         });
                     }
                 },
@@ -206,6 +209,7 @@ Ext.define('FileManagement.components.navigation.NavigationPanel', {
                             }
                         });
                         FileManagement.components.utils.PanelUtils.refreshHomeDashboard();
+                        me.syncPrivateVaultNavigationState();
                     });
                 }
             }
@@ -425,6 +429,7 @@ Ext.define('FileManagement.components.navigation.NavigationPanel', {
                 children: [
                     { text: 'Home', baseText: 'Home', iconCls: 'fa fa-home', action: 'home', leaf: true },
                     { text: 'File Explorer', baseText: 'File Explorer', iconCls: 'fa fa-folder-open', action: 'fileExplorer', leaf: true },
+                    { text: 'Private Vault', baseText: 'Private Vault', iconCls: 'fa fa-user-lock', action: 'privateVault', leaf: true },
                     { text: 'Shared With Me', baseText: 'Shared With Me', iconCls: 'fa fa-share-nodes', action: 'sharedWithMe', leaf: true },
                     { text: 'Shared By Me', baseText: 'Shared By Me', iconCls: 'fa fa-share-from-square', action: 'sharedByMe', leaf: true },
                     { text: 'Upload Files', baseText: 'Upload Files', iconCls: 'fa fa-upload', action: 'upload', leaf: true },
@@ -643,6 +648,11 @@ Ext.define('FileManagement.components.navigation.NavigationPanel', {
             return;
         }
 
+        if (record.get('disabled')) {
+            Ext.Msg.alert('Private Vault', 'Private Vault is available only in your Personal workspace.');
+            return;
+        }
+
         this.handleNavigationAction(action);
 
         const shouldAutoClose = !FileManagement.components.settings ||
@@ -677,6 +687,9 @@ Ext.define('FileManagement.components.navigation.NavigationPanel', {
             case 'fileExplorer':
                 panelUtils.openFileExplorer();
                 break;
+            case 'privateVault':
+                FileManagement.components.utils.PrivateVaultManager.openPrivateVault();
+                break;
             case 'sharedWithMe':
                 panelUtils.openSharedWithMe();
                 break;
@@ -701,5 +714,23 @@ Ext.define('FileManagement.components.navigation.NavigationPanel', {
             default:
                 break;
         }
+    },
+
+    syncPrivateVaultNavigationState: function() {
+        const workspace = FileManagement.components.utils.WorkspaceContext.getActiveWorkspace();
+        const disabled = !!workspace && workspace.type !== 'personal';
+
+        this.getNavigationTrees().forEach(function(tree) {
+            const store = tree.getStore();
+            const vaultNode = store ? store.getRootNode().findChild('action', 'privateVault', true) : null;
+
+            if (!vaultNode) {
+                return;
+            }
+
+            vaultNode.set('disabled', disabled);
+            vaultNode.set('text', disabled ? 'Private Vault (Personal)' : 'Private Vault');
+            vaultNode.commit();
+        });
     }
 });

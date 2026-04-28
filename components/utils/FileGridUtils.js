@@ -3,7 +3,8 @@ Ext.define('FileManagement.components.utils.FileGridUtils', {
 	    requires: [
 	        'FileManagement.helpers.Functions',
 	        'FileManagement.components.utils.PanelUtils',
-	        'FileManagement.components.utils.ProgressBarManager'
+	        'FileManagement.components.utils.ProgressBarManager',
+	        'FileManagement.components.utils.PasswordPromptUtil'
 	    ],
 
     downloadFileInChunks: async function(fileRef, fileName, token, chunkSize, fileGrid = null) {
@@ -183,13 +184,11 @@ Ext.define('FileManagement.components.utils.FileGridUtils', {
 
     handleItemAccess: function(record, callback) {
         if (record.get('isLocked')) {
-            // Show password prompt dialog
-            Ext.create('FileManagement.components.dialogs.PasswordPromptDialog', {
+            FileManagement.components.utils.PasswordPromptUtil.showPasswordPrompt({
                 itemId: record.get('id'),
-                itemName: record.get('name'),
-                isFolder: record.get('isFolder'),
+                isFolder: record.get('isFolder') !== false,
                 onSuccess: callback
-            }).show();
+            });
         } else {
             // If not password protected, proceed directly
             callback();

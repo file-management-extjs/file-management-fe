@@ -27,6 +27,9 @@ Ext.define('FileManagement.components.grids.FileGrid', {
     listMode: 'files',
     sharedMode: false,
     sharedByMeMode: false,
+    privateVaultMode: false,
+    privateVaultRootId: '',
+    privateVaultName: 'Private Vault',
     workspaceId: '',
     workspaceName: 'Personal',
     workspaceType: 'personal',
@@ -1055,8 +1058,8 @@ Ext.define('FileManagement.components.grids.FileGrid', {
                     moveMenuItem.setDisabled(selection.length === 0 || ownerOnlyDisabled);
 
                     const shareMenuItem = menu.down('#shareMenuItem');
-                    shareMenuItem.setHidden(grid.sharedMode || grid.sharedByMeMode);
-                    shareMenuItem.setDisabled(selection.length !== 1 || ownerOnlyDisabled);
+                    shareMenuItem.setHidden(grid.sharedMode || grid.sharedByMeMode || grid.privateVaultMode);
+                    shareMenuItem.setDisabled(selection.length !== 1 || ownerOnlyDisabled || grid.privateVaultMode);
 
                     revokeShareMenuItem.setHidden(!hasRevocableShareSelection);
                     revokeShareMenuItem.setDisabled(!hasRevocableShareSelection);
@@ -1208,24 +1211,31 @@ Ext.define('FileManagement.components.grids.FileGrid', {
 
         breadcrumbToolbar.removeAll();
 
+        const vaultRootSelected = this.privateVaultMode &&
+            this.privateVaultRootId &&
+            pathSegments.length > 0 &&
+            pathSegments[0].id === this.privateVaultRootId;
+        const visibleSegments = vaultRootSelected ? pathSegments.slice(1) : pathSegments;
+        const segmentOffset = vaultRootSelected ? 1 : 0;
+
         breadcrumbToolbar.add({
             xtype: 'button',
-            text: 'Root',
+            text: this.privateVaultMode ? this.privateVaultName : 'Root',
             handler: () => this.navigateToRoot()
         });
 
-        if (pathSegments.length > 0) {
+        if (visibleSegments.length > 0) {
             breadcrumbToolbar.add(this.createBreadcrumbSeparator());
         }
 
-        pathSegments.forEach((segment, index) => {
+        visibleSegments.forEach((segment, index) => {
             breadcrumbToolbar.add({
                 xtype: 'button',
                 text: segment.name,
-                handler: () => this.navigateToPathIndex(index)
+                handler: () => this.navigateToPathIndex(index + segmentOffset)
             });
 
-            if (index < pathSegments.length - 1) {
+            if (index < visibleSegments.length - 1) {
                 breadcrumbToolbar.add(this.createBreadcrumbSeparator());
             }
         });
@@ -2289,6 +2299,16 @@ Ext.define('FileManagement.components.grids.FileGrid', {
 
     // Method to navigate back to the root directory
     navigateToRoot: function () {
+        if (this.privateVaultMode && this.privateVaultRootId) {
+            this.currentFolderPath = [{
+                id: this.privateVaultRootId,
+                name: this.privateVaultName
+            }];
+            this.loadFolderContents(this.privateVaultName, this.privateVaultRootId, false);
+            this.updateBreadcrumb(this.currentFolderPath);
+            return;
+        }
+
         this.currentFolderPath = [];
         this.loadFolderContents(null, null);
         this.updateBreadcrumb([]);
@@ -2584,6 +2604,15 @@ Ext.define('FileManagement.components.grids.FileGrid', {
             return;
         }
 
+        if (this.privateVaultMode && (workspace.type !== 'personal' || (this.workspaceId && this.workspaceId !== workspace.id))) {
+            Ext.defer(function() {
+                if (!this.destroyed && !this.destroying) {
+                    this.close();
+                }
+            }, 1, this);
+            return;
+        }
+
         const changed = this.workspaceId && this.workspaceId !== workspace.id;
         this.workspaceId = workspace.id;
         this.workspaceName = workspace.name || 'Personal';
@@ -2607,6 +2636,11 @@ Ext.define('FileManagement.components.grids.FileGrid', {
             return;
         }
 
+        if (this.privateVaultMode) {
+            this.setTitle('Private Vault - Personal');
+            return;
+        }
+
         const suffix = this.workspaceType === 'organization'
             ? `${this.workspaceName} (Org)`
             : 'Personal';
@@ -2614,7 +2648,7 @@ Ext.define('FileManagement.components.grids.FileGrid', {
     },
 
     setListMode: function (mode, options = {}) {
-        const nextMode = mode === 'sharedWithMe' || mode === 'sharedByMe' ? mode : 'files';
+        const nextMode = mode === 'sharedWithMe' || mode === 'sharedByMe' || mode === 'privateVault' ? mode : 'files';
         if (this.listMode === nextMode) {
             this.updateModeControls();
             this.updateSelectionActions();
@@ -2624,7 +2658,8 @@ Ext.define('FileManagement.components.grids.FileGrid', {
         this.listMode = nextMode;
         this.sharedMode = nextMode === 'sharedWithMe';
         this.sharedByMeMode = nextMode === 'sharedByMe';
-        this.setTitle(this.sharedMode ? 'Shared With Me' : this.sharedByMeMode ? 'Shared By Me' : 'Files Explorer');
+        this.privateVaultMode = nextMode === 'privateVault';
+        this.setTitle(this.sharedMode ? 'Shared With Me' : this.sharedByMeMode ? 'Shared By Me' : this.privateVaultMode ? 'Private Vault' : 'Files Explorer');
         if (!this.sharedMode && !this.sharedByMeMode) {
             this.updateWorkspaceTitle();
         }
@@ -2642,6 +2677,37 @@ Ext.define('FileManagement.components.grids.FileGrid', {
         this.updateSelectionActions([]);
 
         if (!options.skipLoad) {
+            this.loadFiles();
+        }
+    },
+
+    openPrivateVaultRoot: function (vault, options = {}) {
+        if (!vault || !vault.rootFolderId) {
+            return;
+        }
+
+        this.listMode = 'privateVault';
+        this.sharedMode = false;
+        this.sharedByMeMode = false;
+        this.privateVaultMode = true;
+        this.privateVaultRootId = vault.rootFolderId;
+        this.privateVaultName = vault.name || 'Private Vault';
+        this.workspaceId = vault.workspaceId || this.workspaceId || FileManagement.components.utils.WorkspaceContext.getActiveWorkspaceId();
+        this.workspaceType = 'personal';
+        this.workspaceName = 'Personal';
+        this.currentFolderId = this.privateVaultRootId;
+        this.currentFolderPath = [{
+            id: this.privateVaultRootId,
+            name: this.privateVaultName
+        }];
+        this.currentFolder = this.privateVaultName;
+
+        this.updateWorkspaceTitle();
+        this.updateBreadcrumb(this.currentFolderPath);
+        this.updateModeControls();
+        this.updateSelectionActions([]);
+
+        if (options.skipLoad !== true) {
             this.loadFiles();
         }
     },
@@ -2678,9 +2744,14 @@ Ext.define('FileManagement.components.grids.FileGrid', {
             deleteButton.setDisabled(true);
         }
 
-        if (goUpButton) goUpButton.setDisabled(this.sharedByMeMode || this.currentFolderPath.length === 0);
+        if (goUpButton) {
+            const atPrivateVaultRoot = this.privateVaultMode &&
+                this.privateVaultRootId &&
+                this.currentFolderId === this.privateVaultRootId;
+            goUpButton.setDisabled(this.sharedByMeMode || this.currentFolderPath.length === 0 || atPrivateVaultRoot);
+        }
 
-        if (shareButton) shareButton.setHidden(managementMode);
+        if (shareButton) shareButton.setHidden(managementMode || this.privateVaultMode);
         if (revokeShareButton) revokeShareButton.setHidden(!this.sharedByMeMode);
         if (moveButton) moveButton.setHidden(managementMode);
         if (compressButton) compressButton.setHidden(managementMode);
@@ -2963,6 +3034,7 @@ Ext.define('FileManagement.components.grids.FileGrid', {
         const hasFolder = selected.some(record => record.get('isFolder'));
         const hasViewOnlyShare = selected.some(record => record.get('isShared') && record.get('permission') !== 'download');
         const managementMode = this.sharedMode || this.sharedByMeMode;
+        const sharingBlocked = managementMode || this.privateVaultMode;
         const hasRevocableShareSelection = this.hasRevocableShareSelection(selected);
 
         var deleteButton = this.down('#deleteButton');
@@ -3026,7 +3098,7 @@ Ext.define('FileManagement.components.grids.FileGrid', {
         if (moveButton) moveButton.setDisabled(!hasSelection || hasSharedSelection || hasUpDirectory || hasUploadPlaceholder || managementMode);
 
         var shareButton = this.down('#shareItemButton');
-        if (shareButton) shareButton.setDisabled(selected.length !== 1 || hasSharedSelection || hasUpDirectory || hasUploadPlaceholder || managementMode);
+        if (shareButton) shareButton.setDisabled(selected.length !== 1 || hasSharedSelection || hasUpDirectory || hasUploadPlaceholder || sharingBlocked);
 
         var revokeShareButton = this.down('#revokeShareButton');
         if (revokeShareButton) {
@@ -3290,11 +3362,19 @@ Ext.define('FileManagement.components.grids.FileGrid', {
 
         const goUpButton = this.down('#goUpButton');
         if (goUpButton) {
-            goUpButton.setDisabled(this.sharedByMeMode || this.currentFolderPath.length === 0);
+            const atPrivateVaultRoot = this.privateVaultMode &&
+                this.privateVaultRootId &&
+                this.currentFolderId === this.privateVaultRootId;
+            goUpButton.setDisabled(this.sharedByMeMode || this.currentFolderPath.length === 0 || atPrivateVaultRoot);
         }
     },
 
     navigateUp: function () {
+        if (this.privateVaultMode && this.currentFolderPath.length <= 1) {
+            Ext.Msg.alert('Info', 'You are already at the Private Vault root.');
+            return;
+        }
+
         if (this.currentFolderPath.length > 1) {
             // Remove the last folder from the current folder path
             this.currentFolderPath.pop();
