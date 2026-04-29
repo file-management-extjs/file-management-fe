@@ -245,6 +245,13 @@ Ext.define('FileManagement.components.dialogs.DocumentConversionDialog', {
             return;
         }
 
+        const grid = me.getGrid ? me.getGrid() : null;
+        if (grid && grid.ensurePrivateVaultUnlocked && !grid.ensurePrivateVaultUnlocked(function() {
+            me.runConversion();
+        })) {
+            return;
+        }
+
         mask.show();
 
         FileManagement.components.utils.ProgressBarManager.addProgressBar(
@@ -342,6 +349,13 @@ Ext.define('FileManagement.components.dialogs.DocumentConversionDialog', {
             failure: function(response) {
                 mask.hide();
                 FileManagement.components.utils.ProgressBarManager.removeProgressBar(progressId);
+                if (grid && grid.handlePrivateVaultAccessFailure && grid.handlePrivateVaultAccessFailure(response, {
+                    onUnlock: function() {
+                        me.runConversion();
+                    }
+                })) {
+                    return;
+                }
                 const payload = Ext.decode(response.responseText, true) || {};
                 const errorMessage = payload.error || payload.message || 'Document conversion failed.';
                 FileManagement.components.status.DocumentConversionQueuePanel.handleUpdate({

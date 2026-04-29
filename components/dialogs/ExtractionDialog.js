@@ -14,6 +14,7 @@ Ext.define('FileManagement.components.dialogs.ExtractionDialog', {
     layout: 'fit',
     
     config: {
+        grid: null,
         file: null,
         onSuccess: null
     },
@@ -90,12 +91,20 @@ Ext.define('FileManagement.components.dialogs.ExtractionDialog', {
     extractToFolder: function(folderNode) {
         const dialog = this;
         const file = this.getFile();
+        const grid = this.getGrid ? this.getGrid() : null;
+
+        if (grid && grid.ensurePrivateVaultUnlocked && !grid.ensurePrivateVaultUnlocked(function() {
+            dialog.extractToFolder(folderNode);
+        })) {
+            return;
+        }
         
         dialog.mask('Extracting files... Please wait');
         
         FileManagement.components.utils.DecompressionUtil.decompressFile({
             filePath: file.get('path'),
             parentId: folderNode.get('id') === 'root' ? null : folderNode.get('id'),
+            grid: grid,
             onSuccess: function(response) {
                 dialog.unmask();
                 dialog.close();

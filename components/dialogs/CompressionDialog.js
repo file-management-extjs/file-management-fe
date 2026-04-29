@@ -10,6 +10,7 @@ Ext.define('FileManagement.components.dialogs.CompressionDialog', {
     closeAction: 'destroy',
 
     config: {
+        grid: null,
         selections: null,
         currentFolderId: null,
         currentFolder: null,
@@ -79,7 +80,7 @@ Ext.define('FileManagement.components.dialogs.CompressionDialog', {
         }
     }, {
         text: 'Compress',
-        handler: function() {
+        handler: function(btn) {
             const win = this.up('window');
             const values = {
                 archiveName: win.down('[name=archiveName]').getValue(),
@@ -93,6 +94,14 @@ Ext.define('FileManagement.components.dialogs.CompressionDialog', {
             }
 
             const token = FileManagement.helpers.Functions.getToken();
+            const grid = win.getGrid ? win.getGrid() : null;
+
+            if (grid && grid.ensurePrivateVaultUnlocked && !grid.ensurePrivateVaultUnlocked(function() {
+                btn.handler.call(btn, btn);
+            })) {
+                return;
+            }
+
             const archiveExtensions = {
                 '7z': '.7z',
                 zip: '.zip',
@@ -179,8 +188,18 @@ Ext.define('FileManagement.components.dialogs.CompressionDialog', {
 	                    affectedItems
 	                })
 	            })
-                .then(response => response.json())
+                .then(response => {
+                    if (!response.ok) {
+                        return FileManagement.components.utils.PrivateVaultManager.createErrorFromFetchResponse(response, 'Failed to start compression');
+                    }
+
+                    return response.json();
+                })
                 .then(result => {
+                    if (result instanceof Error) {
+                        throw result;
+                    }
+
                     if (!result.success) {
                         throw new Error(result.error || 'Failed to start compression');
                     }
@@ -189,6 +208,13 @@ Ext.define('FileManagement.components.dialogs.CompressionDialog', {
                 })
                 .catch(error => {
                     FileManagement.components.utils.ProgressBarManager.removeProgressBar(progressId);
+                    if (grid && grid.handlePrivateVaultAccessFailure && grid.handlePrivateVaultAccessFailure(error, {
+                        onUnlock: function() {
+                            FileManagement.components.actions.FileGridActions.onCompressSelectedFiles(grid);
+                        }
+                    })) {
+                        return;
+                    }
                     Ext.Msg.alert('Compression Error', `Failed to start compression: ${error.message}`);
                 });
         }

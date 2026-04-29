@@ -760,6 +760,13 @@ Ext.define('FileManagement.components.dialogs.PDFStudioDialog', {
             return;
         }
 
+        const grid = me.getGrid ? me.getGrid() : null;
+        if (grid && grid.ensurePrivateVaultUnlocked && !grid.ensurePrivateVaultUnlocked(function() {
+            me.runOperation();
+        })) {
+            return;
+        }
+
         const token = FileManagement.helpers.Functions.getToken();
         const mask = new Ext.LoadMask({
             target: me,
@@ -807,6 +814,13 @@ Ext.define('FileManagement.components.dialogs.PDFStudioDialog', {
             },
             failure: function(response) {
                 mask.hide();
+                if (grid && grid.handlePrivateVaultAccessFailure && grid.handlePrivateVaultAccessFailure(response, {
+                    onUnlock: function() {
+                        me.runOperation();
+                    }
+                })) {
+                    return;
+                }
                 const result = Ext.decode(response.responseText, true) || {};
                 Ext.Msg.alert('PDF Studio', result.error || result.message || 'PDF Studio operation failed.');
             }

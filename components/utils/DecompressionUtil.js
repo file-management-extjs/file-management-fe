@@ -72,6 +72,13 @@ Ext.define('FileManagement.components.utils.DecompressionUtil', {
                 }
                 FileManagement.components.utils.ProgressBarManager.markActivityStatus(progressId, 'failed', 'Failed');
                 FileManagement.components.utils.ProgressBarManager.removeProgressBar(progressId);
+                if (grid && grid.handlePrivateVaultAccessFailure && grid.handlePrivateVaultAccessFailure(response, {
+                    onUnlock: function() {
+                        FileManagement.components.utils.DecompressionUtil.decompressFile(config);
+                    }
+                })) {
+                    return;
+                }
                 if (onFailure) {
                     onFailure(response);
                 } else {
@@ -89,6 +96,7 @@ Ext.define('FileManagement.components.utils.DecompressionUtil', {
 
     showDecompressDialog: function(config) {
         Ext.create('FileManagement.components.dialogs.ExtractionDialog', {
+            grid: config.grid || null,
             file: config.file,
             onSuccess: config.onSuccess
         }).show();

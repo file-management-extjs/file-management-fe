@@ -27,10 +27,23 @@ Ext.define('FileManagement.components.forms.auth.RegisterForm', {
                     if (form.isValid()) {
                         form.submit({
                             url: FileManagementEnv.apiUrl('/api/auth/register'),
-                            success: function() {
-                                Ext.Msg.alert('Success', 'Registration successful');
-                                btn.up('window').close();
-                                Ext.create('FileManagement.components.forms.auth.LoginForm'); // Redirect to login
+                            success: function(form) {
+                                const registerWindow = btn.up('window');
+                                const values = form.getValues();
+
+                                Ext.Msg.alert('Success', 'Registration successful', function() {
+                                    if (!registerWindow || registerWindow.destroyed) {
+                                        return;
+                                    }
+
+                                    if (registerWindow.hasListeners && registerWindow.hasListeners.registrationSuccess) {
+                                        registerWindow.fireEvent('registrationSuccess', registerWindow, values);
+                                        return;
+                                    }
+
+                                    registerWindow.close();
+                                    Ext.create('FileManagement.components.forms.auth.LoginForm');
+                                });
                             },
                             failure: function(form, action) {
                                 Ext.Msg.alert('Failed', action.result ? action.result.error : 'Server error');

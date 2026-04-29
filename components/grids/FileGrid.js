@@ -11,6 +11,7 @@ Ext.define('FileManagement.components.grids.FileGrid', {
 	        'FileManagement.components.utils.DecompressionUtil',
 	        'FileManagement.components.utils.UploadSessionManager',
 	        'FileManagement.components.utils.WorkspaceContext',
+	        'FileManagement.components.utils.PrivateVaultManager',
 	        'FileManagement.components.status.ScanQueuePanel'
 	    ],
 
@@ -362,8 +363,15 @@ Ext.define('FileManagement.components.grids.FileGrid', {
                 iconCls: 'fa fa-download',
                 itemId: 'downloadButton',
                 disabled: true,
-                handler: async function () {
+                handler: async function (btn) {
                     const grid = this.up('gridpanel');
+
+                    if (grid.ensurePrivateVaultUnlocked && !grid.ensurePrivateVaultUnlocked(function() {
+                        btn.handler.call(btn, btn);
+                    })) {
+                        return;
+                    }
+
                     const selection = grid.getSelectionModel().getSelection();
 
                     if (selection.length === 0) {
@@ -384,8 +392,8 @@ Ext.define('FileManagement.components.grids.FileGrid', {
                             workspaceId: file.get('workspaceId') || grid.getWorkspaceId()
                         }, fileName, token, chunkSize);
                     } else {
-                        Ext.Msg.prompt('Zip File Name', 'Enter the name of the zip file:', async function (btn, zipFileName) {
-                            if (btn === 'ok' && zipFileName) {
+                        Ext.Msg.prompt('Zip File Name', 'Enter the name of the zip file:', async function (choice, zipFileName) {
+                            if (choice === 'ok' && zipFileName) {
 	                                const selectedItems = selection.map(record => record.get('id'));
 	                                const affectedItems = selection.map(record => ({
 	                                    name: record.get('name'),
@@ -469,7 +477,7 @@ Ext.define('FileManagement.components.grids.FileGrid', {
 	                                    });
 
                                     if (!response.ok) {
-                                        throw new Error('Failed to create ZIP file.');
+                                        throw await FileManagement.components.utils.PrivateVaultManager.createErrorFromFetchResponse(response, 'Failed to create ZIP file.');
                                     }
 
                                     const result = await response.json();
@@ -481,6 +489,13 @@ Ext.define('FileManagement.components.grids.FileGrid', {
                                 } catch (error) {
                                     FileManagement.components.utils.ProgressBarManager.removeProgressBar(progressId);
                                     console.error('Error during compression:', error);
+                                    if (grid.handlePrivateVaultAccessFailure && grid.handlePrivateVaultAccessFailure(error, {
+                                        onUnlock: function() {
+                                            btn.handler.call(btn, btn);
+                                        }
+                                    })) {
+                                        return;
+                                    }
                                     Ext.Msg.alert('Error', `Failed to download ZIP: ${error.message}`);
                                 }
                             }
@@ -562,9 +577,7 @@ Ext.define('FileManagement.components.grids.FileGrid', {
                         handler: function (field) {
                             field.setValue('');
                             const grid = field.up('gridpanel');
-                            const store = grid.getStore();
-                            store.getProxy().setExtraParams(grid.buildStoreParams());
-                            store.load();
+                            grid.loadFiles();
                             field.getTrigger('clear').hide();
                         }
                     }
@@ -583,21 +596,26 @@ Ext.define('FileManagement.components.grids.FileGrid', {
                         const value = field.getValue();
                         const grid = field.up('gridpanel');
                         const store = grid.getStore();
+                        const loadSearchResults = function() {
+                            if (value) {
+                                store.getProxy().setExtraParams(grid.buildStoreParams({ search: value }));
+                            } else {
+                                store.getProxy().setExtraParams(grid.buildStoreParams());
+                            }
+                            store.load();
+                        };
 
-                        if (value) {
-                            store.getProxy().setExtraParams(grid.buildStoreParams({ search: value }));
-                        } else {
-                            store.getProxy().setExtraParams(grid.buildStoreParams());
+                        if (grid.ensurePrivateVaultUnlocked && !grid.ensurePrivateVaultUnlocked(loadSearchResults)) {
+                            return;
                         }
-                        store.load();
+
+                        loadSearchResults();
                     },
                     specialkey: function (field, e) {
                         if (e.getKey() === e.ESC) {
                             field.setValue('');
                             const grid = field.up('gridpanel');
-                            const store = grid.getStore();
-                            store.getProxy().setExtraParams(grid.buildStoreParams());
-                            store.load();
+                            grid.loadFiles();
                         }
                     }
                 }
@@ -613,6 +631,15 @@ Ext.define('FileManagement.components.grids.FileGrid', {
                 }
             },
             {
+                text: 'Personal Vault',
+                iconCls: 'fa fa-user-lock',
+                itemId: 'personalVaultButton',
+                tooltip: 'Open Personal Vault',
+                handler: function () {
+                    FileManagement.components.utils.PrivateVaultManager.openPrivateVault();
+                }
+            },
+            {
                 xtype: 'tbseparator',
                 itemId: 'fileManagementSeparator'
             },
@@ -621,7 +648,7 @@ Ext.define('FileManagement.components.grids.FileGrid', {
                 iconCls: 'fa fa-refresh',
                 handler: function () {
                     const grid = this.up('grid');
-                    grid.getStore().reload();
+                    grid.loadFiles();
                 }
             },
             {
@@ -665,7 +692,15 @@ Ext.define('FileManagement.components.grids.FileGrid', {
                 text: 'New Folder',
                 itemId: 'newFolderButton',
                 iconCls: 'fa fa-folder',
-                handler: function () {
+                handler: function (button) {
+                    const grid = this.up('grid');
+
+                    if (grid.ensurePrivateVaultUnlocked && !grid.ensurePrivateVaultUnlocked(function() {
+                        button.handler.call(button, button);
+                    })) {
+                        return;
+                    }
+
                     Ext.Msg.prompt('New Folder', 'Enter folder name:', function (btn, folderName) {
                         if (btn === 'ok' && folderName) {
                             const parentFolderId = this.up('grid').currentFolderId || null;
@@ -680,13 +715,24 @@ Ext.define('FileManagement.components.grids.FileGrid', {
                                 },
                                 success: function (response) {
                                     Ext.Msg.alert('Success', 'Folder created successfully.');
-                                    const store = this.up('grid').getStore();
-                                    if (store) {
-                                        store.reload();
+                                    const grid = this.up('grid');
+                                    if (grid) {
+                                        grid.loadFiles();
                                     }
                                     FileManagement.components.utils.PanelUtils.refreshHomeDashboard();
                                 },
                                 failure: function (response) {
+                                    const grid = this.up('grid');
+                                    if (grid && grid.handlePrivateVaultAccessFailure && grid.handlePrivateVaultAccessFailure(response, {
+                                        onUnlock: function() {
+                                            const button = grid.down('#newFolderButton');
+                                            if (button && button.handler) {
+                                                button.handler.call(button, button);
+                                            }
+                                        }
+                                    })) {
+                                        return;
+                                    }
                                     let error = JSON.parse(response.responseText).message;
                                     Ext.Msg.alert('Error', error ?? 'Failed to create folder');
                                 },
@@ -720,6 +766,16 @@ Ext.define('FileManagement.components.grids.FileGrid', {
 
             me.mon(store, 'datachanged', me.updateFooterStats, me);
             me.mon(store, 'datachanged', me.scheduleRowOperationLayerUpdate, me);
+            const proxy = store.getProxy ? store.getProxy() : null;
+            if (proxy) {
+                me.mon(proxy, 'exception', function(proxy, response) {
+                    me.handlePrivateVaultAccessFailure(response, {
+                        onUnlock: function() {
+                            me.loadFiles();
+                        }
+                    });
+                }, me);
+            }
 	            me.mon(store, 'load', me.restoreOperationRows, me);
 	            if (Ext.GlobalEvents) {
 	                me.mon(Ext.GlobalEvents, 'uploadsessionchanged', me.restoreOperationRows, me);
@@ -918,6 +974,7 @@ Ext.define('FileManagement.components.grids.FileGrid', {
                                     if (zipFile && zipFile.get('mimetype') === 'application/zip') {
                                         const proceedWithDecompress = () => {
                                             FileManagement.components.utils.DecompressionUtil.showDecompressDialog({
+                                                grid: grid,
                                                 file: zipFile,
                                                 currentFolder: this.currentFolder,
                                                 parentId: this.currentFolderId,
@@ -2323,15 +2380,37 @@ Ext.define('FileManagement.components.grids.FileGrid', {
         this.updateBreadcrumb(newPath);
     },
 
+    ensurePrivateVaultUnlocked: function(onUnlock) {
+        return FileManagement.components.utils.PrivateVaultManager.ensureGridUnlocked(this, onUnlock);
+    },
+
+    handlePrivateVaultAccessFailure: function(response, options = {}) {
+        return FileManagement.components.utils.PrivateVaultManager.handleAccessExpired(response, this, options);
+    },
+
     // Optionally, you can add methods for additional functionality
     loadFiles: function () {
         var me = this;
+
+        if (me.ensurePrivateVaultUnlocked && !me.ensurePrivateVaultUnlocked(function() {
+            me.loadFiles();
+        })) {
+            return;
+        }
 
         // Load the store data
         me.getStore().getProxy().setExtraParams(me.buildStoreParams());
         me.getStore().load({
             callback: function (records, operation, success) {
                 if (!success) {
+                    const response = operation && operation.getResponse ? operation.getResponse() : null;
+                    if (me.handlePrivateVaultAccessFailure && me.handlePrivateVaultAccessFailure(response, {
+                        onUnlock: function() {
+                            me.loadFiles();
+                        }
+                    })) {
+                        return;
+                    }
                     console.error('Failed to load files:', operation.getError());
                 }
             }
@@ -2717,6 +2796,7 @@ Ext.define('FileManagement.components.grids.FileGrid', {
         const uploadButton = this.down('#uploadButton');
         const newFolderButton = this.down('#newFolderButton');
         const goUpButton = this.down('#goUpButton');
+        const personalVaultButton = this.down('#personalVaultButton');
         const deleteButton = this.down('#deleteButton');
         const shareButton = this.down('#shareItemButton');
         const revokeShareButton = this.down('#revokeShareButton');
@@ -2749,6 +2829,15 @@ Ext.define('FileManagement.components.grids.FileGrid', {
                 this.privateVaultRootId &&
                 this.currentFolderId === this.privateVaultRootId;
             goUpButton.setDisabled(this.sharedByMeMode || this.currentFolderPath.length === 0 || atPrivateVaultRoot);
+        }
+
+        if (personalVaultButton) {
+            const personalWorkspace = this.workspaceType === 'personal';
+            personalVaultButton.setHidden(managementMode || this.privateVaultMode);
+            personalVaultButton.setDisabled(!personalWorkspace);
+            personalVaultButton.setTooltip(personalWorkspace
+                ? 'Open Personal Vault'
+                : 'Switch to your Personal workspace to use Personal Vault');
         }
 
         if (shareButton) shareButton.setHidden(managementMode || this.privateVaultMode);
@@ -3204,6 +3293,12 @@ Ext.define('FileManagement.components.grids.FileGrid', {
 
         const fileId = record.get('id');
 
+        if (this.ensurePrivateVaultUnlocked && !this.ensurePrivateVaultUnlocked(() => {
+            this.onFileDoubleClick(record);
+        })) {
+            return;
+        }
+
         // Check if file/folder is password protected and not already verified
         if (record.get('isPasswordProtected') && !FileManagement.components.utils.AccessTracker.isItemVerified(fileId)) {
             FileManagement.components.utils.PasswordPromptUtil.showPasswordPrompt({
@@ -3337,6 +3432,12 @@ Ext.define('FileManagement.components.grids.FileGrid', {
 
     // Function to load the contents of a folder
     loadFolderContents: function (folderName, folderId, pushToPath = true) {
+        if (this.ensurePrivateVaultUnlocked && !this.ensurePrivateVaultUnlocked(() => {
+            this.loadFolderContents(folderName, folderId, pushToPath);
+        })) {
+            return;
+        }
+
         // Only push the folder to currentFolderPath if explicitly allowed
         if (folderName !== null && folderId !== this.currentFolderId && pushToPath) {
             this.currentFolderPath.push({ name: folderName, id: folderId });
@@ -3355,9 +3456,18 @@ Ext.define('FileManagement.components.grids.FileGrid', {
         store.load({
             callback: function (records, operation, success) {
                 if (!success) {
+                    const response = operation && operation.getResponse ? operation.getResponse() : null;
+                    if (this.handlePrivateVaultAccessFailure && this.handlePrivateVaultAccessFailure(response, {
+                        onUnlock: () => {
+                            this.loadFolderContents(folderName, folderId, pushToPath);
+                        }
+                    })) {
+                        return;
+                    }
                     Ext.Msg.alert('Error', `Failed to load contents of folder "${folderName}".`);
                 }
-            }
+            },
+            scope: this
         });
 
         const goUpButton = this.down('#goUpButton');
@@ -3402,6 +3512,12 @@ Ext.define('FileManagement.components.grids.FileGrid', {
             return;
         }
 
+        if (grid.ensurePrivateVaultUnlocked && !grid.ensurePrivateVaultUnlocked(function() {
+            grid.moveItemsHandler();
+        })) {
+            return;
+        }
+
         Ext.create('Ext.window.Window', {
             title: 'Move Item',
             modal: true,
@@ -3443,6 +3559,12 @@ Ext.define('FileManagement.components.grids.FileGrid', {
 
                         if (selectedItems.length === 0) {
                             Ext.Msg.alert('Error', 'No items selected for moving.');
+                            return;
+                        }
+
+                        if (fileGrid.ensurePrivateVaultUnlocked && !fileGrid.ensurePrivateVaultUnlocked(function() {
+                            btn.handler.call(btn, btn);
+                        })) {
                             return;
                         }
 

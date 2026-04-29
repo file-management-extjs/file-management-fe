@@ -20,6 +20,12 @@ Ext.define('FileManagement.components.actions.FileGridActions', {
         const selectedRecords = grid.getSelectionModel().getSelection();
         if (selectedRecords.length === 0) return;
 
+        if (grid.ensurePrivateVaultUnlocked && !grid.ensurePrivateVaultUnlocked(function() {
+            FileManagement.components.actions.FileGridActions.onDeleteFiles(grid);
+        })) {
+            return;
+        }
+
         Ext.Msg.confirm('Delete Files', 'Are you sure you want to delete the selected files?', function(btn) {
             if (btn === 'yes') {
                 // Show loading mask
@@ -46,6 +52,13 @@ Ext.define('FileManagement.components.actions.FileGridActions', {
                     },
                     failure: function(response) {
                         grid.setLoading(false);
+                        if (grid.handlePrivateVaultAccessFailure && grid.handlePrivateVaultAccessFailure(response, {
+                            onUnlock: function() {
+                                grid.loadFiles();
+                            }
+                        })) {
+                            return;
+                        }
                         Ext.Msg.alert('Error', 'Failed to delete files/folders.');
                     }
                 });
@@ -210,6 +223,12 @@ Ext.define('FileManagement.components.actions.FileGridActions', {
         const selectedRecord = grid.getSelectionModel().getSelection()[0];
         if (!selectedRecord) return;
 
+        if (grid.ensurePrivateVaultUnlocked && !grid.ensurePrivateVaultUnlocked(function() {
+            FileManagement.components.actions.FileGridActions.onRenameFile(grid);
+        })) {
+            return;
+        }
+
         Ext.Msg.prompt('Rename', 'Enter new name:', function(btn, text) {
             if (btn === 'ok' && text) {
                 const token = FileManagement.helpers.Functions.getToken();
@@ -232,6 +251,13 @@ Ext.define('FileManagement.components.actions.FileGridActions', {
                         FileManagement.components.utils.PanelUtils.refreshHomeDashboard();
                     },
                     failure: function(response) {
+                        if (grid.handlePrivateVaultAccessFailure && grid.handlePrivateVaultAccessFailure(response, {
+                            onUnlock: function() {
+                                FileManagement.components.actions.FileGridActions.onRenameFile(grid);
+                            }
+                        })) {
+                            return;
+                        }
                         const responseJson = Ext.decode(response.responseText, true) || {};
                         Ext.Msg.alert('Error', responseJson.message || 'Failed to rename file/folder.');
                     }
@@ -250,6 +276,13 @@ Ext.define('FileManagement.components.actions.FileGridActions', {
 
         const token = FileManagement.helpers.Functions.getToken();
         grid.setLoading('Queueing virus scan...');
+
+        if (grid.ensurePrivateVaultUnlocked && !grid.ensurePrivateVaultUnlocked(function() {
+            FileManagement.components.actions.FileGridActions.onRequestVirusScan(grid);
+        })) {
+            grid.setLoading(false);
+            return;
+        }
 
         Ext.Ajax.request({
             url: FileManagementEnv.apiUrl(`/api/files/scan/${selectedRecord.get('id')}`),
@@ -284,6 +317,13 @@ Ext.define('FileManagement.components.actions.FileGridActions', {
             },
             failure: function(response) {
                 grid.setLoading(false);
+                if (grid.handlePrivateVaultAccessFailure && grid.handlePrivateVaultAccessFailure(response, {
+                    onUnlock: function() {
+                        FileManagement.components.actions.FileGridActions.onRequestVirusScan(grid);
+                    }
+                })) {
+                    return;
+                }
                 const result = Ext.decode(response.responseText, true) || {};
                 Ext.Msg.alert('Virus Scan', result.error || 'Failed to queue virus scan.');
             }
@@ -334,6 +374,12 @@ Ext.define('FileManagement.components.actions.FileGridActions', {
 
         if (!mainPanel) {
             Ext.Msg.alert('Error', 'Main panel not found.');
+            return;
+        }
+
+        if (grid.ensurePrivateVaultUnlocked && !grid.ensurePrivateVaultUnlocked(() => {
+            FileManagement.components.actions.FileGridActions.onViewFile(grid, record);
+        })) {
             return;
         }
 
@@ -494,6 +540,12 @@ Ext.define('FileManagement.components.actions.FileGridActions', {
         }
 
         const folderId = record.get('id');
+
+        if (grid.ensurePrivateVaultUnlocked && !grid.ensurePrivateVaultUnlocked(() => {
+            FileManagement.components.actions.FileGridActions.onOpenFolder(grid, record);
+        })) {
+            return;
+        }
         
         try {
             // Check if folder is password protected and not already verified
@@ -528,6 +580,12 @@ Ext.define('FileManagement.components.actions.FileGridActions', {
             return;
         }
 
+        if (grid.ensurePrivateVaultUnlocked && !grid.ensurePrivateVaultUnlocked(function() {
+            FileManagement.components.actions.FileGridActions.onCompressSelectedFiles(grid);
+        })) {
+            return;
+        }
+
         // Get file/folder info for compression
         // const items = validRecords.map(record => ({
         //     id: record.get('id'),
@@ -559,6 +617,12 @@ Ext.define('FileManagement.components.actions.FileGridActions', {
             return;
         }
 
+        if (grid.ensurePrivateVaultUnlocked && !grid.ensurePrivateVaultUnlocked(function() {
+            FileManagement.components.actions.FileGridActions.onPDFStudio(grid);
+        })) {
+            return;
+        }
+
         Ext.create('FileManagement.components.dialogs.PDFStudioDialog', {
             grid,
             selections: selectedRecords,
@@ -577,6 +641,12 @@ Ext.define('FileManagement.components.actions.FileGridActions', {
 
         if (selectedRecords.length !== 1 || !isSupportedMedia) {
             Ext.Msg.alert('Media Conversion Hub', 'Please select one audio, video, or image file.');
+            return;
+        }
+
+        if (grid.ensurePrivateVaultUnlocked && !grid.ensurePrivateVaultUnlocked(function() {
+            FileManagement.components.actions.FileGridActions.onMediaConversionHub(grid);
+        })) {
             return;
         }
 
@@ -607,6 +677,12 @@ Ext.define('FileManagement.components.actions.FileGridActions', {
             return;
         }
 
+        if (grid.ensurePrivateVaultUnlocked && !grid.ensurePrivateVaultUnlocked(function() {
+            FileManagement.components.actions.FileGridActions.onDocumentConversionSuite(grid);
+        })) {
+            return;
+        }
+
         Ext.create('FileManagement.components.dialogs.DocumentConversionDialog', {
             grid,
             selections: selectedRecords,
@@ -624,6 +700,12 @@ Ext.define('FileManagement.components.actions.FileGridActions', {
 
         if (selectedRecords.length !== 1 || !grid.isContentIntelligenceRecord || !grid.isContentIntelligenceRecord(selectedRecord)) {
             Ext.Msg.alert('Content Intelligence', 'Please select one supported document, PDF, image, or text file.');
+            return;
+        }
+
+        if (grid.ensurePrivateVaultUnlocked && !grid.ensurePrivateVaultUnlocked(function() {
+            FileManagement.components.actions.FileGridActions.onContentIntelligence(grid);
+        })) {
             return;
         }
 
@@ -709,6 +791,13 @@ Ext.define('FileManagement.components.actions.FileGridActions', {
             failure: function(response) {
                 grid.setLoading(false);
                 FileManagement.components.utils.ProgressBarManager.removeProgressBar(progressId);
+                if (grid.handlePrivateVaultAccessFailure && grid.handlePrivateVaultAccessFailure(response, {
+                    onUnlock: function() {
+                        FileManagement.components.actions.FileGridActions.onContentIntelligence(grid);
+                    }
+                })) {
+                    return;
+                }
                 const result = Ext.decode(response.responseText, true) || {};
                 Ext.Msg.alert('Content Intelligence', result.error || result.message || 'Failed to queue content intelligence.');
             }

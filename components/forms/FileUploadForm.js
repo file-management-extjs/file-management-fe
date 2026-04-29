@@ -3,6 +3,7 @@ Ext.define('FileManagement.components.forms.FileUploadForm', {
     xtype: 'fileuploadform',
     requires: [
         'FileManagement.components.utils.UploadSessionManager',
+        'FileManagement.components.utils.PrivateVaultManager',
         'FileManagement.components.settings.UserSettings'
     ],
     title: 'Upload Files',
@@ -146,6 +147,13 @@ Ext.define('FileManagement.components.forms.FileUploadForm', {
         const fileGrid = options.fileGrid ||
             (this.targetGrid && !this.targetGrid.destroyed && !this.targetGrid.destroying ? this.targetGrid : null) ||
             FileManagement.components.utils.PanelUtils.getPrimaryFileGrid();
+
+        if (fileGrid && fileGrid.ensurePrivateVaultUnlocked && !fileGrid.ensurePrivateVaultUnlocked(() => {
+            this.uploadFiles(filesArray, options);
+        })) {
+            return;
+        }
+
         const currentFolderId = options.folderId !== undefined
             ? (options.folderId || '')
             : (fileGrid ? (fileGrid.currentFolderId || '') : '');
@@ -259,6 +267,15 @@ Ext.define('FileManagement.components.forms.FileUploadForm', {
                     FileManagement.components.utils.ProgressBarManager.updateProgress(progressId, 0, 'Upload Canceled');
                     FileManagement.components.utils.NotificationUtil.showWarning(`Upload canceled for ${file.name}`, 'Upload Canceled', { category: 'uploads' });
                 } else {
+                    if (operationGrid && operationGrid.handlePrivateVaultAccessFailure && operationGrid.handlePrivateVaultAccessFailure(error, {
+                        onUnlock: () => {
+                            this.uploadFiles(filesArray.slice(index), options);
+                        }
+                    })) {
+                        FileManagement.components.utils.ProgressBarManager.removeProgressBar(progressId);
+                        return;
+                    }
+
                     console.error('Error during upload:', error);
                     uploadSessionManager.interruptSession(sessionId);
                     const failedGrid = this.getLiveOperationGrid(operationGrid, 'cancelUploadPlaceholder');
@@ -376,6 +393,8 @@ Ext.define('FileManagement.components.forms.FileUploadForm', {
                         }
                     }
                 }
+            } else if (response.status !== 404) {
+                throw await FileManagement.components.utils.PrivateVaultManager.createErrorFromFetchResponse(response, 'Failed to check upload status');
             }
 
             while (start < file.size) {
@@ -401,7 +420,7 @@ Ext.define('FileManagement.components.forms.FileUploadForm', {
                 });
 
                 if (!uploadResponse.ok) {
-                    throw new Error(`Failed to upload chunk ${start} - ${end}`);
+                    throw await FileManagement.components.utils.PrivateVaultManager.createErrorFromFetchResponse(uploadResponse, `Failed to upload chunk ${start} - ${end}`);
                 }
 
                 start = end;

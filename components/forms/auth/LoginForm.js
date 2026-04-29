@@ -15,10 +15,6 @@ Ext.define('FileManagement.components.forms.auth.LoginForm', {
     autoShow: true,
     bodyPadding: 10,
     headers: {},
-    // Define custom events
-    listeners: {
-        loginSuccess: 'onLoginSuccess' // Maps to a function or event listener on success
-    },
 
     initComponent: function() {
         this.items = this.createLoginForm();
@@ -67,8 +63,14 @@ Ext.define('FileManagement.components.forms.auth.LoginForm', {
         form.submit({
             url: FileManagementEnv.apiUrl('/api/auth/login'),
             success: function(form, action) {
-                const { token, username, userId } = action.result;
+                const result = action.result || {};
+                const { token, username, userId } = result;
                 const rememberMe = form.findField('rememberMe').getValue();
+
+                if (!token) {
+                    Ext.Msg.alert('Failed', 'Login response did not include an auth token.');
+                    return;
+                }
 
                 me.setRememberMeDefault(rememberMe);
                 FileManagement.helpers.Functions.storeAuthSession(
@@ -76,10 +78,22 @@ Ext.define('FileManagement.components.forms.auth.LoginForm', {
                     rememberMe
                 );
 
-                // Reload the application to ensure updates
-                Ext.Msg.alert('Success', 'Logged in successfully', function() {
-                    window.location.reload();
+                Ext.Ajax.setDefaultHeaders({
+                    Authorization: FileManagement.helpers.Functions.getAuthorizationHeader()
                 });
+
+                const userSettings = me.getUserSettings();
+                if (userSettings && userSettings.resetCache) {
+                    userSettings.resetCache();
+                }
+
+                const hasLoginListener = !!(me.hasListeners && me.hasListeners.loginSuccess);
+                me.fireEvent('loginSuccess', me, result);
+                me.close();
+
+                if (!hasLoginListener) {
+                    window.location.reload();
+                }
             },
             failure: function(form, action) {
                 let errorMessage = action.result && action.result.error;

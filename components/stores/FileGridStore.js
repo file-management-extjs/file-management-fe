@@ -291,6 +291,7 @@ Ext.define('FileManagement.components.stores.FileGridStore', {
 
     compressSelected: function(grid, selections, currentFolderId, currentFolder) {        
         Ext.create('FileManagement.components.dialogs.CompressionDialog', {
+            grid,
             selections,
             currentFolderId: currentFolderId,
             currentFolder: currentFolder,

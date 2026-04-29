@@ -120,6 +120,13 @@ Ext.define('FileManagement.components.settings.UserSettings', {
         return this.settings;
     },
 
+    resetCache: function() {
+        this.user = null;
+        this.settings = null;
+        this.loading = false;
+        this.loadCallbacks = [];
+    },
+
     get: function(path, fallback) {
         const parts = String(path || '').split('.');
         let value = this.getSettings();

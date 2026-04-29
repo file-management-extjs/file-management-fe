@@ -513,6 +513,13 @@ Ext.define('FileManagement.components.dialogs.MediaConversionDialog', {
             return;
         }
 
+        const grid = me.getGrid ? me.getGrid() : null;
+        if (grid && grid.ensurePrivateVaultUnlocked && !grid.ensurePrivateVaultUnlocked(function() {
+            me.runConversion();
+        })) {
+            return;
+        }
+
         const token = FileManagement.helpers.Functions.getToken();
         const progressId = `media-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
         const sourceName = record.get('name') || 'media file';
@@ -620,6 +627,13 @@ Ext.define('FileManagement.components.dialogs.MediaConversionDialog', {
             failure: function(response) {
                 mask.hide();
                 FileManagement.components.utils.ProgressBarManager.removeProgressBar(progressId);
+                if (grid && grid.handlePrivateVaultAccessFailure && grid.handlePrivateVaultAccessFailure(response, {
+                    onUnlock: function() {
+                        me.runConversion();
+                    }
+                })) {
+                    return;
+                }
                 const payload = Ext.decode(response.responseText, true) || {};
                 const errorMessage = payload.error || payload.message || 'Media conversion failed.';
                 FileManagement.components.status.MediaConversionQueuePanel.handleUpdate({

@@ -4,7 +4,9 @@ Ext.define('FileManagement.components.utils.FileGridUtils', {
 	        'FileManagement.helpers.Functions',
 	        'FileManagement.components.utils.PanelUtils',
 	        'FileManagement.components.utils.ProgressBarManager',
-	        'FileManagement.components.utils.PasswordPromptUtil'
+	        'FileManagement.components.utils.PasswordPromptUtil',
+	        'FileManagement.components.utils.AccessTracker',
+	        'FileManagement.components.utils.PrivateVaultManager'
 	    ],
 
     downloadFileInChunks: async function(fileRef, fileName, token, chunkSize, fileGrid = null) {
@@ -48,7 +50,7 @@ Ext.define('FileManagement.components.utils.FileGridUtils', {
             });
 
             if (!metadataResponse.ok) {
-                throw new Error('Failed to fetch file size');
+                throw await FileManagement.components.utils.PrivateVaultManager.createErrorFromFetchResponse(metadataResponse, 'Failed to fetch file size');
             }
 
             const { fileSize } = await metadataResponse.json();
@@ -85,7 +87,7 @@ Ext.define('FileManagement.components.utils.FileGridUtils', {
                 });
 
                 if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
+                    throw await FileManagement.components.utils.PrivateVaultManager.createErrorFromFetchResponse(response, `HTTP error! status: ${response.status}`);
                 }
 
                 const chunk = await response.arrayBuffer();
@@ -157,6 +159,18 @@ Ext.define('FileManagement.components.utils.FileGridUtils', {
                 );
                 FileManagement.components.utils.ProgressBarManager.removeProgressBar(progressId);
             } else {
+                if (grid && grid.handlePrivateVaultAccessFailure && grid.handlePrivateVaultAccessFailure(error, {
+                    onUnlock: () => {
+                        this.downloadFileInChunks(fileRef, fileName, token, chunkSize, grid);
+                    }
+                })) {
+                    FileManagement.components.utils.ProgressBarManager.removeProgressBar(progressId);
+                    if (grid && grid.finishDownloadIndicator) {
+                        grid.finishDownloadIndicator(progressId, 'Locked', 900);
+                    }
+                    return;
+                }
+
                 if (grid && grid.finishDownloadIndicator) {
                     grid.finishDownloadIndicator(progressId, 'Failed', 1600);
                 }
@@ -198,6 +212,19 @@ Ext.define('FileManagement.components.utils.FileGridUtils', {
     moveItem: function(selectedItems, targetRecord, sourceGrid) {
         if (!targetRecord || !targetRecord.get('id')) {
             return Promise.reject('Invalid target folder');
+        }
+
+        if (sourceGrid &&
+            sourceGrid.privateVaultMode &&
+            sourceGrid.privateVaultRootId &&
+            !FileManagement.components.utils.AccessTracker.isItemVerified(sourceGrid.privateVaultRootId)) {
+            return new Promise((resolve, reject) => {
+                sourceGrid.ensurePrivateVaultUnlocked(function() {
+                    FileManagement.components.utils.FileGridUtils.moveItem(selectedItems, targetRecord, sourceGrid)
+                        .then(resolve)
+                        .catch(reject);
+                });
+            });
         }
 
         const token = FileManagement.helpers.Functions.getToken();
@@ -266,6 +293,16 @@ Ext.define('FileManagement.components.utils.FileGridUtils', {
                                 resolve(response);
                             },
 	                            failure: function(response) {
+                                    if (sourceGrid && sourceGrid.handlePrivateVaultAccessFailure && sourceGrid.handlePrivateVaultAccessFailure(response, {
+                                        onUnlock: function() {
+                                            FileManagement.components.utils.FileGridUtils.moveItem(selectedItems, targetRecord, sourceGrid)
+                                                .then(resolve)
+                                                .catch(reject);
+                                        }
+                                    })) {
+                                        FileManagement.components.utils.ProgressBarManager.removeProgressBar(progressId);
+                                        return;
+                                    }
 	                                FileManagement.components.utils.ProgressBarManager.markActivityStatus(progressId, 'failed', 'Failed');
 	                                FileManagement.components.utils.ProgressBarManager.removeProgressBar(progressId);
 	                                reject('Move operation failed: ' + response.statusText);

@@ -16,7 +16,14 @@ Ext.define('FileManagement.components.utils.KeyboardShortcuts', {
         // Add other shortcuts here as needed
     },
 
+    initialized: false,
+
     init: function() {
+        if (this.initialized) {
+            return;
+        }
+
+        this.initialized = true;
         // Add keyboard event listener
         Ext.getBody().on('keydown', this.handleKeyDown, this);
     },

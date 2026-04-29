@@ -118,7 +118,16 @@ Ext.application({
 
         const isAuthenticated = !!FileManagement.helpers.Functions.getToken();
 
+        let mainViewLoaded = false;
+
         const loadMainView = () => {
+            if (mainViewLoaded) {
+                return;
+            }
+
+            mainViewLoaded = true;
+            FileManagement.components.utils.KeyboardShortcuts.init();
+
             const syncResponsiveShell = Ext.Function.createBuffered(function(viewPort) {
                 const width = viewPort && viewPort.getWidth ? viewPort.getWidth() : Ext.Element.getViewportWidth();
                 const navPanel = Ext.getCmp('navigationpanel');
@@ -288,7 +297,29 @@ Ext.application({
             loginForm.show();
             registerForm.hide();
 
-            loginForm.on('loginSuccess', loadMainView);
+            loginForm.on('loginSuccess', function() {
+                if (registerForm && !registerForm.destroyed) {
+                    registerForm.close();
+                }
+
+                loadMainView();
+            });
+
+            registerForm.on('registrationSuccess', function(registerWindow, values) {
+                const usernameField = loginForm.down('textfield[name=username]');
+                const passwordField = loginForm.down('textfield[name=password]');
+
+                registerWindow.setVisible(false);
+                loginForm.setVisible(true);
+
+                if (usernameField && values && values.username) {
+                    usernameField.setValue(values.username);
+                }
+
+                if (passwordField) {
+                    passwordField.focus(false, 100);
+                }
+            });
 
             loginForm.down('#loginform-registerbutton').on('click', function() {
                 loginForm.setVisible(false);
@@ -301,9 +332,6 @@ Ext.application({
             });
         } else {
             Ext.onReady(function() {
-                // Initialize keyboard shortcuts
-                FileManagement.components.utils.KeyboardShortcuts.init();
-
                 loadMainView();
             });
         }
